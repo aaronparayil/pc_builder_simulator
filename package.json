@@ -1,18 +1,21 @@
 {
-  "name": "workshop",
-  "version": "1.0.0",
+  "name": "rig-builder",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A 3D PC building simulator in the browser: pick parts, catch compatibility issues, stay on budget and benchmark your build.",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "author": "Aaron Parayil",
   "dependencies": {
-    "lil-gui": "^0.20.0",
-    "three": "^0.179.1",
+    "three": "^0.179.1"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.5.1",
     "vite": "^7.1.1"
   }
 }
