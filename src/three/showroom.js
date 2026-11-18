@@ -215,6 +215,7 @@ export function drawInfoPoster(poster, W = 900, H = 1200) {
 // Display cabinets
 
 const frameMat = new THREE.MeshStandardMaterial({ color: 0x14161c, metalness: 0.6, roughness: 0.4 });
+const pedestalMat = new THREE.MeshStandardMaterial({ color: 0x101217, metalness: 0.3, roughness: 0.5 });
 const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xbfd4e6, roughness: 0.05, transparent: true, opacity: 0.12, depthWrite: false });
 
 function canvasTexture(w, h, draw) {
@@ -313,7 +314,15 @@ function buildCabinet(category, title, parts) {
     const x = perLevel === 1 ? 0 : (i % 2 === 0 ? -0.33 : 0.33);
     const y = levels[Math.max(0, level)] + (level ? 0.006 : 0);
     const obj = createDisplayObject(part);
-    obj.position.set(x, y + 0.03, -0.04);
+    // Each item stands on a small pedestal so the price plaque never hides it
+    const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+    const width = size.x;
+    const pedH = Math.max(0.075, 0.21 - size.y); // short items get a taller stand
+    const ped = new THREE.Mesh(new THREE.BoxGeometry(Math.min(0.56, width + 0.05), pedH, 0.2), pedestalMat);
+    ped.position.set(x, y + pedH / 2, -0.06);
+    ped.castShadow = ped.receiveShadow = true;
+    g.add(ped);
+    obj.position.set(x, y + pedH, -0.06);
     obj.userData.interact = { kind: 'part', partId: part.id, category, label: `Inspect ${part.name}` };
     g.add(obj);
     items.push(obj);

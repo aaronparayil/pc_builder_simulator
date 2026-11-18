@@ -83,11 +83,11 @@ export const PARTS = {
     { id: 'nvme4-2t', name: '2 TB NVMe Gen4', price: 130, iface: 'NVMe', form: 'm2', read: 7000, bootSeconds: 7, specs: ['M.2 NVMe', '7000 MB/s'] },
   ],
   gpu: [
-    { id: 'rx7600', name: 'Radeon RX 7600', price: 260, watts: 165, vram: 8, fps1080: 95, specs: ['8 GB', '165 W'] },
-    { id: 'rtx4060', name: 'GeForce RTX 4060', price: 300, watts: 115, vram: 8, fps1080: 100, specs: ['8 GB', '115 W', 'Efficient'] },
-    { id: 'rtx4070s', name: 'GeForce RTX 4070 Super', price: 600, watts: 220, vram: 12, fps1080: 165, specs: ['12 GB', '220 W'] },
-    { id: 'rx7900xt', name: 'Radeon RX 7900 XT', price: 700, watts: 315, vram: 20, fps1080: 200, specs: ['20 GB', '315 W'] },
-    { id: 'rtx4090', name: 'GeForce RTX 4090', price: 1800, watts: 450, vram: 24, fps1080: 290, specs: ['24 GB', '450 W', 'Flagship'] },
+    { id: 'rx7600', name: 'Radeon RX 7600', price: 260, watts: 165, vram: 8, fps1080: 95, specs: ['8 GB', '165 W', '204 mm'] },
+    { id: 'rtx4060', name: 'GeForce RTX 4060', price: 300, watts: 115, vram: 8, fps1080: 100, specs: ['8 GB', '115 W', '240 mm'] },
+    { id: 'rtx4070s', name: 'GeForce RTX 4070 Super', price: 600, watts: 220, vram: 12, fps1080: 165, specs: ['12 GB', '220 W', '267 mm'] },
+    { id: 'rx7900xt', name: 'Radeon RX 7900 XT', price: 700, watts: 315, vram: 20, fps1080: 200, specs: ['20 GB', '315 W', '276 mm'] },
+    { id: 'rtx4090', name: 'GeForce RTX 4090', price: 1800, watts: 450, vram: 24, fps1080: 290, specs: ['24 GB', '450 W', '330 mm', '3.5-slot'] },
   ],
   psu: [
     { id: 'psu450', name: '450 W Bronze', price: 45, watts: 450, rating: 'Bronze', specs: ['450 W', '80+ Bronze'] },

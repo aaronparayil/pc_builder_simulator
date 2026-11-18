@@ -6,16 +6,26 @@ export const CASE = { D: 0.46, H: 0.48, W: 0.23 };
 const Z0 = -CASE.W / 2 + 0.03; // front face of the motherboard tray
 const SHROUD_TOP = 0.105;
 
-/** Where each part sits: centre of its bounding box and the box it must fit in. */
+/** The motherboard's front face (it sits on standoffs in front of the tray). */
+export const BOARD_Z = Z0 + 0.008;
+const BOARD_CENTER = new THREE.Vector2(-0.093, 0.2825);
+// Mirrors LAYOUT in models/board.js (board-local → case coordinates)
+const onBoard = (x, y, z) => new THREE.Vector3(BOARD_CENTER.x + x, BOARD_CENTER.y + y, BOARD_Z + z);
+
+/**
+ * Where each part's origin goes. `size`/`center` describe the "goes here" indicator.
+ * Procedural parts are built with their mounting point at the origin.
+ */
 export const SLOTS = {
-  motherboard: { pos: new THREE.Vector3(-0.093, 0.2825, Z0 + 0.016), size: new THREE.Vector3(0.244, 0.305, 0.05) },
-  cpu: { pos: new THREE.Vector3(-0.092, 0.326, Z0 + 0.034), size: new THREE.Vector3(0.04, 0.04, 0.006) },
-  cooler: { pos: new THREE.Vector3(-0.092, 0.326, Z0 + 0.037), size: null },
-  ram: { pos: new THREE.Vector3(-0.0315, 0.3228, Z0 + 0.05), size: new THREE.Vector3(0.02, 0.134, 0.036) },
-  storage: { pos: new THREE.Vector3(-0.122, 0.178, Z0 + 0.034), size: new THREE.Vector3(0.08, 0.022, 0.004) },
+  motherboard: { pos: onBoard(0, 0, 0), center: onBoard(0, 0, 0.012), size: new THREE.Vector3(0.244, 0.305, 0.03) },
+  cpu: { pos: onBoard(0.001, 0.0435, 0.004), center: onBoard(0.001, 0.0435, 0.0065), size: new THREE.Vector3(0.042, 0.047, 0.005) },
+  cooler: { pos: onBoard(0.001, 0.0435, 0.0086), size: null },
+  ram: { pos: onBoard(0.0615, 0.04, 0.0045), center: onBoard(0.0615, 0.04, 0.022), size: new THREE.Vector3(0.022, 0.136, 0.036) },
+  storage: { pos: onBoard(-0.029, -0.1045, 0.003), size: new THREE.Vector3(0.08, 0.022, 0.004) },
   storageBay: { pos: new THREE.Vector3(0.075, SHROUD_TOP, 0.02), size: null },
-  gpu: { pos: new THREE.Vector3(-0.087, 0.242, Z0 + 0.088), size: new THREE.Vector3(0.27, 0.042, 0.12) },
-  psu: { pos: new THREE.Vector3(-0.14, 0.049, 0.0), size: new THREE.Vector3(0.15, 0.086, 0.14) },
+  // GPU origin = I/O bracket, top of the PCB, PCIe edge
+  gpu: { pos: new THREE.Vector3(-0.222, BOARD_CENTER.y - 0.0215 + 0.0005, BOARD_Z + 0.007), center: new THREE.Vector3(-0.087, 0.236, BOARD_Z + 0.067), size: new THREE.Vector3(0.27, 0.05, 0.12) },
+  psu: { pos: new THREE.Vector3(-0.142, 0.049, 0.0), size: new THREE.Vector3(0.15, 0.086, 0.14) },
 };
 
 const panelMat = new THREE.MeshStandardMaterial({ color: 0x101217, metalness: 0.55, roughness: 0.45 });
@@ -73,10 +83,12 @@ export function buildCase() {
   accent.position.set(D / 2 + 0.001, H / 2, W / 2 - 0.02);
   group.add(accent);
   // Motherboard tray standoffs
-  for (const [x, y] of [[-0.2, 0.15], [-0.2, 0.42], [0.015, 0.15], [0.015, 0.42], [-0.09, 0.28]]) {
-    const s = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.012, 8), new THREE.MeshStandardMaterial({ color: 0xb59a5a, metalness: 0.9, roughness: 0.3 }));
+  // Standoffs line up with the board's screw holes and reach its back face
+  const backOfBoard = BOARD_Z - 0.0016, tray = -W / 2 + t;
+  for (const [x, y] of [[-0.107, -0.1325], [-0.107, 0.1375], [0.108, -0.1325], [0.108, 0.1375], [0.003, -0.0825]]) {
+    const s = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, backOfBoard - tray, 8), new THREE.MeshStandardMaterial({ color: 0xb59a5a, metalness: 0.9, roughness: 0.3 }));
     s.rotation.x = Math.PI / 2;
-    s.position.set(x, y, -W / 2 + t + 0.006);
+    s.position.set(BOARD_CENTER.x + x, BOARD_CENTER.y + y, (tray + backOfBoard) / 2);
     group.add(s);
   }
   // Rear expansion slot covers

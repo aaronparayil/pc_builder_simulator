@@ -2,15 +2,18 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { SLOTS, createFan } from './pcCase.js';
+import { buildBoard } from './models/board.js';
+import { buildCpu } from './models/cpu.js';
+import { buildGpu } from './models/gpu.js';
+import { box as addBox, gold, rgbMaterial } from './models/common.js';
+import { RAM_LOOKS } from '../data/looks.js';
 
 const BASE = import.meta.env.BASE_URL;
 
 // Scanned/modelled parts: how to rotate each model into case space.
+// Only the M.2 SSD is a scanned model; every other part is built in code (see models/).
 const MODELS = {
-  motherboard: { url: 'models/motherboard.glb', rotation: [Math.PI / 2, 0, 0] },
-  cpu: { url: 'models/cpu.glb', rotation: [Math.PI / 2, 0, 0] },
   storage: { url: 'models/storage.glb', rotation: [0, 0, 0] },
-  gpu: { url: 'models/gpu.glb', rotation: [0, 0, Math.PI / 2] },
 };
 
 const loader = new GLTFLoader();
@@ -204,39 +207,46 @@ function buildBayDrive(form) {
 }
 
 function buildRam(part) {
+  const look = RAM_LOOKS[part.id] || RAM_LOOKS['d4-16'];
   const g = new THREE.Group();
   const rgb = [];
-  const ddr5 = part.type === 'DDR5';
-  const spreader = new THREE.MeshStandardMaterial({ color: ddr5 ? 0xd9dde3 : 0x1c1f26, metalness: 0.75, roughness: 0.35 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: ddr5 ? 0x1c1f26 : 0xc2410c, metalness: 0.5, roughness: 0.4 });
-  const pcb = new THREE.MeshStandardMaterial({ color: 0x0f3d2a, roughness: 0.6 });
-  for (const x of [-0.0042, 0.0126]) {
+  const spreader = new THREE.MeshStandardMaterial({ color: look.spreader, metalness: 0.75, roughness: 0.35 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: look.accent, metalness: 0.5, roughness: 0.4 });
+  const pcbMat = new THREE.MeshStandardMaterial({ color: 0x0f3d2a, roughness: 0.6 });
+  const top = look.height;
+  const barH = look.rgb ? 0.0065 : 0;
+  const sh = top - 0.004 - barH;
+  // Origin = bottom edge of the sticks (where they enter the slot); the two sticks
+  // sit in the 2nd and 4th DIMM slots.
+  for (const x of [-0.0084, 0.0084]) {
     const stick = new THREE.Group();
-    const board = new THREE.Mesh(new THREE.BoxGeometry(0.0012, 0.133, 0.031), pcb);
-    board.position.z = -0.0025;
-    stick.add(board);
+    addBox(stick, 0.0012, 0.133, 0.031, pcbMat, 0, 0, 0.0155);
+    addBox(stick, 0.0013, 0.128, 0.003, gold, 0, 0, 0.0015);
     for (const side of [-1, 1]) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.0022, 0.13, 0.03), spreader);
-      plate.position.set(side * 0.0018, 0, 0);
-      stick.add(plate);
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.0003, 0.09, 0.006), accentMat);
-      stripe.position.set(side * 0.003, 0.01, 0.006);
-      stick.add(stripe);
+      addBox(stick, 0.0022, 0.13, sh, spreader, side * 0.0018, 0, 0.004 + sh / 2);
+      addBox(stick, 0.0003, 0.09, Math.min(0.006, sh * 0.25), accentMat, side * 0.003, 0.01, 0.004 + sh * 0.62);
     }
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.0055, 0.128, 0.0045), ddr5 ? ringMat() : accentMat);
-    bar.position.z = 0.0172;
-    if (ddr5) rgb.push(bar.material);
-    stick.add(bar);
-    stick.position.x = x - 0.0042;
+    if (look.rgb) {
+      const bar = rgbMaterial();
+      rgb.push(bar);
+      addBox(stick, 0.0055, 0.128, barH, bar, 0, 0, top - barH / 2);
+    } else {
+      addBox(stick, 0.0058, 0.13, 0.0022, accentMat, 0, 0, top - 0.0011);
+    }
+    stick.position.x = x;
     g.add(stick);
   }
   g.userData.rgb = rgb;
   return prepare(g);
 }
 
+/** PSU length grows with wattage, like real units (140-180 mm). */
+const psuLength = (part) => (part.watts >= 1000 ? 0.18 : part.watts >= 850 ? 0.16 : 0.14);
+
 function buildPsu(part) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.086, 0.14), new THREE.MeshStandardMaterial({ color: 0x121419, metalness: 0.5, roughness: 0.55 }));
+  const len = psuLength(part);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(len, 0.086, 0.14), new THREE.MeshStandardMaterial({ color: 0x121419, metalness: 0.5, roughness: 0.55 }));
   g.add(body);
   const label = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.05),
     new THREE.MeshStandardMaterial({ map: labelTexture(`${part.watts} W · ${part.rating.toUpperCase()}`, '#1a1d24', part.rating === 'Bronze' ? '#d08b4f' : part.rating === 'Gold' ? '#ffd166' : '#d9dde3'), roughness: 0.5 }));
@@ -260,6 +270,19 @@ function buildPsu(part) {
   return prepare(g);
 }
 
+/** The Gen4 drive ships with a finned heatsink over the M.2 module. */
+function withHeatsink(template) {
+  const g = new THREE.Group();
+  if (template) g.add(template.clone(true));
+  const sink = new THREE.MeshStandardMaterial({ color: 0x17191e, metalness: 0.7, roughness: 0.4 });
+  addBox(g, 0.072, 0.0215, 0.0035, sink, 0.002, 0, 0.0028);
+  for (let i = 0; i < 9; i++) addBox(g, 0.0016, 0.0215, 0.003, sink, -0.03 + i * 0.0075, 0, 0.0058);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 0.008), new THREE.MeshStandardMaterial({ map: labelTexture('GEN4', '#17191e', '#5eead4'), roughness: 0.5 }));
+  label.position.set(0.028, 0, 0.0046);
+  g.add(label);
+  return prepare(g);
+}
+
 // --- public API -----------------------------------------------------------------
 
 /** Build a 3D object for a catalog part, plus where it goes in the case. */
@@ -277,7 +300,20 @@ export function createPartObject(part) {
     position = SLOTS.ram.pos.clone();
   } else if (part.category === 'psu') {
     object = buildPsu(part);
-    position = SLOTS.psu.pos.clone();
+    // keep the PSU's back flush with the rear of the case
+    position = SLOTS.psu.pos.clone().setX(-0.217 + psuLength(part) / 2);
+  } else if (part.category === 'motherboard') {
+    object = prepare(buildBoard(part));
+    position = SLOTS.motherboard.pos.clone();
+  } else if (part.category === 'cpu') {
+    object = buildCpu(part);
+    position = SLOTS.cpu.pos.clone();
+  } else if (part.category === 'gpu') {
+    object = prepare(buildGpu(part));
+    position = SLOTS.gpu.pos.clone();
+  } else if (part.category === 'storage' && part.id === 'nvme4-2t') {
+    object = withHeatsink(templates.get('storage'));
+    position = SLOTS.storage.pos.clone();
   } else {
     const tpl = templates.get(part.category);
     object = tpl ? tpl.clone(true) : placeholder(part.category);
@@ -294,29 +330,39 @@ export function createPartObject(part) {
  * scaled up so it reads from across the room.
  */
 export function createDisplayObject(part) {
+  // A fixed enlargement per category, so real size differences stay visible
+  // (an RTX 4090 really is much longer than an RX 7600).
   let object;
-  let size; // target size of the longest side, metres
+  let scale;
   if (part.category === 'ram') {
     object = buildRam(part);
-    object.rotation.y = Math.PI / 2;
-    size = 0.3;
+    object.rotation.set(-Math.PI / 2, 0, -Math.PI / 2); // lie the sticks down, face out
+    scale = 2.2;
   } else if (part.category === 'storage' && part.form !== 'm2') {
     object = buildBayDrive(part.form);
     object.rotation.x = Math.PI / 2;
-    size = part.form === 'hdd' ? 0.27 : 0.22;
+    scale = part.form === 'hdd' ? 1.8 : 2.2;
+  } else if (part.category === 'gpu') {
+    object = prepare(buildGpu(part));
+    object.rotation.x = -Math.PI / 2; // stand on its edge, fans facing out
+    scale = 1.6;
+  } else if (part.category === 'cpu') {
+    object = buildCpu(part);
+    scale = 4;
+  } else if (part.category === 'storage') {
+    const tpl = templates.get('storage');
+    object = part.id === 'nvme4-2t' ? withHeatsink(tpl) : tpl ? tpl.clone(true) : placeholder('storage');
+    scale = 3;
   } else {
-    const tpl = templates.get(part.category);
-    object = tpl ? tpl.clone(true) : placeholder(part.category);
-    size = { gpu: 0.5, cpu: 0.2, storage: 0.26 }[part.category] || 0.2;
+    object = createPartObject(part);
+    object.position.set(0, 0, 0);
+    scale = 1;
   }
   const holder = new THREE.Group();
   holder.add(object);
+  object.scale.multiplyScalar(scale);
   holder.updateMatrixWorld(true);
-  let box = new THREE.Box3().setFromObject(holder);
-  const s = box.getSize(new THREE.Vector3());
-  object.scale.multiplyScalar(size / Math.max(s.x, s.y, s.z));
-  holder.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(holder);
+  const box = new THREE.Box3().setFromObject(holder);
   const c = box.getCenter(new THREE.Vector3());
   object.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
   holder.userData.rgb = object.userData.rgb || [];
@@ -332,5 +378,5 @@ export function slotBox(category) {
     return { center: SLOTS.storage.pos.clone(), size: SLOTS.storage.size.clone().setZ(0.006) };
   }
   const s = SLOTS[category];
-  return s ? { center: s.pos.clone(), size: s.size.clone() } : null;
+  return s ? { center: (s.center || s.pos).clone(), size: s.size.clone() } : null;
 }

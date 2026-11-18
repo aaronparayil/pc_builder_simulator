@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { analyze, emptyBuild, encodeBuild, decodeBuild, previewPart } from '../src/logic/analyze.js';
 import { CHALLENGES, scoreChallenge } from '../src/data/challenges.js';
 import { PARTS, getPart } from '../src/data/catalog.js';
+import { GPU_LOOKS, BOARD_LOOKS, RAM_LOOKS } from '../src/data/looks.js';
 
 const build = (parts) => ({ ...emptyBuild(), ...parts });
 
@@ -115,4 +116,15 @@ test('every challenge has a three-star solution', () => {
     }
   }
   for (const c of CHALLENGES) assert.equal(best[c.id], 3, `${c.title} best is ${best[c.id]} stars`);
+});
+
+test('every GPU, motherboard and memory kit has its own 3D look', () => {
+  for (const p of PARTS.gpu) assert.ok(GPU_LOOKS[p.id], `no model for ${p.id}`);
+  for (const p of PARTS.motherboard) {
+    assert.ok(BOARD_LOOKS[p.id], `no model for ${p.id}`);
+    assert.equal(BOARD_LOOKS[p.id].socket, p.socket, `${p.id} model has the wrong socket`);
+  }
+  for (const p of PARTS.ram) assert.ok(RAM_LOOKS[p.id], `no model for ${p.id}`);
+  // GPU spec chips quote the same length the model is built to
+  for (const p of PARTS.gpu) assert.ok(p.specs.includes(`${Math.round(GPU_LOOKS[p.id].length * 1000)} mm`), p.id);
 });
