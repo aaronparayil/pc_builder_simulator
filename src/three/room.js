@@ -104,7 +104,7 @@ export function buildRoom(scene) {
 
   // Desk
   const desk = new THREE.Group();
-  desk.userData.interact = { kind: 'bench', label: 'Work on your build' };
+  desk.userData.interact = { kind: 'bench', label: 'Build at the workbench' };
   const top = mesh(new THREE.BoxGeometry(1.8, 0.04, 0.85), new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.55 }));
   top.position.y = DESK_TOP - 0.02;
   desk.add(top);

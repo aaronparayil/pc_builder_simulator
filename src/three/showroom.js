@@ -493,6 +493,36 @@ export function buildShowroom(scene) {
   root.add(bench);
   colliders.push({ minX: -0.95, maxX: 0.95, minZ: ROOM.maxZ - 1.15, maxZ: ROOM.maxZ - 0.65 });
 
+  // Workbench beacon: a sign over the desk, plus a pulsing floor ring while walking
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.32), new THREE.MeshBasicMaterial({
+    toneMapped: false,
+    transparent: true,
+    map: canvasTexture(1040, 256, (ctx, w, h) => {
+      ctx.fillStyle = 'rgba(13,15,21,0.92)';
+      ctx.beginPath(); ctx.roundRect(0, 0, w, h, 28); ctx.fill();
+      ctx.strokeStyle = TEAL; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.roundRect(3, 3, w - 6, h - 6, 26); ctx.stroke();
+      ctx.fillStyle = TEAL; ctx.textAlign = 'center';
+      ctx.font = `700 96px ${SANS}`;
+      ctx.fillText('WORKBENCH', w / 2, 120);
+      ctx.fillStyle = '#c3cad6';
+      ctx.font = `500 44px ${MONO}`;
+      ctx.fillText('press E here to build', w / 2, 200);
+    }),
+  }));
+  sign.position.set(0, 2.45, -0.55);
+  root.add(sign);
+  const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.4), toneMapped: false, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 64), ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(0, 0.012, 1.05);
+  ring.raycast = () => {};
+  ring.visible = false;
+  root.add(ring);
+  const beam = new THREE.PointLight(0x5eead4, 0, 2.2, 2);
+  beam.position.set(0, 1.4, 0.9);
+  root.add(beam);
+
   // Comparison kiosk in the middle of the room, facing the bench
   const kiosk = buildKiosk();
   kiosk.position.set(0, 0, 5.3);
@@ -502,7 +532,18 @@ export function buildShowroom(scene) {
 
   function update(dt, time) {
     rgb.forEach((m, i) => m.color.setHSL((time * 0.15 + i * 0.12) % 1, 0.85, 0.55).multiplyScalar(1.6));
+    if (ring.visible) {
+      const k = 0.5 + 0.5 * Math.sin(time * 3);
+      ring.scale.setScalar(1 + k * 0.12);
+      ringMat.opacity = 0.45 + 0.45 * k;
+      beam.intensity = 1.5 + k * 1.5;
+    }
   }
 
-  return { root, colliders, posters, update };
+  function setBeacon(on) {
+    ring.visible = on;
+    if (!on) beam.intensity = 0;
+  }
+
+  return { root, colliders, posters, update, setBeacon };
 }

@@ -19,7 +19,7 @@ export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWa
   pc.group.rotation.y = CASE_ROT_Y;
   scene.add(pc.group);
   engine.onUpdate(pc.update);
-  pc.group.userData.interact = { kind: 'bench', label: 'Work on your build' };
+  pc.group.userData.interact = { kind: 'bench', label: 'Build at the workbench' };
 
   // The showroom needs the part models, so it is built once they have loaded.
   let showroom = null;

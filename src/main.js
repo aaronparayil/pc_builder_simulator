@@ -56,7 +56,7 @@ const workshop = createWorkshop($('#viewport'), {
   },
   onWalkInteract(target) {
     sfx.click();
-    if (target.kind === 'bench') exitWalk();
+    if (target.kind === 'bench') { exitWalk(); sfx.install(); }
     else if (target.kind === 'cabinet') openShowcase(target.category);
     else if (target.kind === 'part') openShowcase(target.category, target.partId);
     else if (target.kind === 'poster') openPoster(target.id);
@@ -241,7 +241,8 @@ let toastTimer = 0;
 function toast(msg, tone = '') {
   const t = $('#toast');
   t.className = `show ${tone}`;
-  t.innerHTML = msg;
+  // Keep text in one flex item (a leading icon stays separate) so inline badges don't split lines
+  t.innerHTML = msg.startsWith('<svg') ? msg.replace('</svg>', '</svg><span>') + '</span>' : `<span>${msg}</span>`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = ''; }, 3200);
 }
@@ -572,15 +573,15 @@ $('#start-dialog').addEventListener('close', (e) => {
   sfx.unlock();
   if (v === 'continue') {
     const s = store.get('rig.session', null);
-    startMode(s.mode || 'free', { build: decodeBuild(encodeBuild(s.build || {})) });
-  } else if (v === 'free') startMode('free', { fresh: true });
+    startMode(s.mode || 'free', { build: decodeBuild(encodeBuild(s.build || {})), walk: true });
+  } else if (v === 'free') startMode('free', { fresh: true, walk: true });
   else if (v === 'help') { openHelp(true); }
-  else if (v.startsWith('challenge:')) startMode(v.slice(10), { fresh: true });
-  else if (state.mode === null) startMode('free', { fresh: true });
+  else if (v.startsWith('challenge:')) startMode(v.slice(10), { fresh: true, walk: true });
+  else if (state.mode === null) startMode('free', { fresh: true, walk: true });
 });
 
-function startMode(mode, { fresh = false, build = null } = {}) {
-  exitWalk();
+function startMode(mode, { fresh = false, build = null, walk = false } = {}) {
+  exitWalk({ toBench: false });
   const prevMode = state.mode;
   state.mode = mode;
   if (state.powered) powerOff(true);
@@ -591,10 +592,16 @@ function startMode(mode, { fresh = false, build = null } = {}) {
   completeHinted = false;
   state.selected = nextCategory('psu') || 'motherboard';
   render();
+  const ch = CHALLENGE_BY_ID[mode];
+  if (walk && canWalk() && workshop.walker) {
+    enterWalk({ fromEntrance: true });
+    toast(ch ? `<strong>${esc(ch.title)}:</strong> ${esc(ch.brief)} Head to the glowing workbench to start.`
+      : 'Look around the showroom, then walk to the glowing workbench and press <kbd>E</kbd> to start building.');
+    return;
+  }
   workshop.view('home', 1.4).then(() => {
     if (!state.build.motherboard) workshop.focusCategory('motherboard');
   });
-  const ch = CHALLENGE_BY_ID[mode];
   if (ch) toast(`<strong>${esc(ch.title)}:</strong> ${esc(ch.brief)}`);
 }
 
@@ -661,24 +668,39 @@ async function share() {
 
 const walking = () => Boolean(workshop.walker?.active);
 
-function enterWalk() {
+/** Sessions start at the showroom entrance; the bench is a walk away. */
+const ENTRANCE = { position: [2.4, 1.6, 7.4], lookAt: [0, 1.2, 0] };
+const canWalk = () => window.matchMedia('(pointer: fine)').matches;
+
+function enterWalk({ fromEntrance = false } = {}) {
   if (!workshop.walker || walking() || state.busy) return;
   if (state.powered) powerOff(true);
   workshop.showSlot(null);
   tooltip.classList.remove('show');
   $('#app').classList.add('walking');
   setSheet('');
-  workshop.walker.enter();
+  workshop.walker.enter(fromEntrance ? {
+    position: new workshop.camera.position.constructor(...ENTRANCE.position),
+    lookAt: new workshop.camera.position.constructor(...ENTRANCE.lookAt),
+  } : undefined);
+  workshop.showroom?.setBeacon(true);
   renderWalkButton();
   sfx.click();
 }
 
-function exitWalk() {
+function exitWalk({ toBench = true } = {}) {
   if (!walking()) return;
   workshop.walker.exit();
+  workshop.showroom?.setBeacon(false);
   $('#app').classList.remove('walking', 'walk-locked');
   renderWalkButton();
   render();
+  if (toBench) {
+    // Arrive at the bench: frame the case, then the next part to install
+    workshop.view('home', 1.2).then(() => {
+      if (!walking() && !state.powered && !state.busy) workshop.focusCategory(state.selected);
+    });
+  }
 }
 
 function renderWalkButton() {
