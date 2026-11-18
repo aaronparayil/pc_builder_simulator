@@ -8,6 +8,14 @@ const SPEED = 2.2;
 const SPRINT = 4;
 const REACH = 3.2;
 
+/** Collision test for a body of `radius` against the room walls and XZ boxes. */
+export function makeBlocker(colliders, radius = RADIUS) {
+  return (x, z) => {
+    if (x < ROOM.minX + radius || x > ROOM.maxX - radius || z < ROOM.minZ + radius || z > ROOM.maxZ - radius) return true;
+    return colliders.some((b) => x > b.minX - radius && x < b.maxX + radius && z > b.minZ - radius && z < b.maxZ + radius);
+  };
+}
+
 /**
  * First-person walking: WASD / arrows to move, mouse to look (pointer lock),
  * Shift to run, E to interact with whatever is under the crosshair.
@@ -34,10 +42,7 @@ export function createWalker(engine, { colliders, onFocus, onInteract, onLockCha
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
   let saved = null;
 
-  function blocked(x, z) {
-    if (x < ROOM.minX + RADIUS || x > ROOM.maxX - RADIUS || z < ROOM.minZ + RADIUS || z > ROOM.maxZ - RADIUS) return true;
-    return colliders.some((b) => x > b.minX - RADIUS && x < b.maxX + RADIUS && z > b.minZ - RADIUS && z < b.maxZ + RADIUS);
-  }
+  const blocked = makeBlocker(colliders, RADIUS);
 
   function findInteract(obj) {
     for (let o = obj; o; o = o.parent) if (o.userData.interact) return { object: o, ...o.userData.interact };

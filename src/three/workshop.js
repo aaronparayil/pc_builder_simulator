@@ -242,6 +242,8 @@ export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWa
     monitor: room.monitor,
     preload,
     get walker() { return walker; },
+    get colliders() { return [...room.colliders, ...(showroom?.colliders || [])]; },
+    lights: room.lights,
     get showroom() { return showroom; },
     sync,
     focusCategory,

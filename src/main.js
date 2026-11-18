@@ -7,6 +7,7 @@ import { drawBench, drawChecklist, drawFail, drawOff, drawPost } from './ui/scre
 import { sfx, isMuted, setMuted } from './ui/audio.js';
 import { ICONS } from './ui/icons.js';
 import { renderCompare } from './ui/compare.js';
+import { createVR } from './three/vr.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const money = (n) => `$${n.toLocaleString('en-US')}`;
@@ -31,6 +32,8 @@ const state = {
 };
 
 let analysis = analyze(state.build);
+let vr = null; // set up after the models load (see setupVR)
+let vrSupported = false;
 
 // ---------------------------------------------------------------------------
 // 3D workshop
@@ -69,7 +72,7 @@ const workshop = createWorkshop($('#viewport'), {
   },
 });
 
-if (import.meta.env.DEV) window.__rig = { state, workshop, openShowcase, openCompare, openPoster, enterWalk, exitWalk, get analysis() { return analysis; } };
+if (import.meta.env.DEV) window.__rig = { state, workshop, openShowcase, openCompare, openPoster, enterWalk, exitWalk, get analysis() { return analysis; }, get vr() { return vr; } };
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -232,6 +235,7 @@ function render() {
   renderMonitor();
   workshop.showSlot(state.powered ? null : state.selected);
   store.set('rig.session', { mode: state.mode, build: state.build });
+  vr?.refresh();
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +476,8 @@ function showResults(a) {
     if (sc.stars) for (let i = 0; i < sc.stars; i++) setTimeout(() => sfx.star(i), 350);
   }
 
+  if (vr?.active) { vr.showResult(a); return; }
+
   if (!a.canBoot) {
     const problems = [
       ...a.missing.map((m) => ({
@@ -550,6 +556,7 @@ function openStart() {
         ${state.mode !== null ? '<button class="btn primary" value="close">Back to the bench</button>' : ''}
         <button class="btn ${hasSession || state.mode !== null ? 'ghost' : 'primary'}" value="free">Free build</button>
         <button class="btn ghost" value="help">How to play</button>
+        ${vrSupported ? `<button class="btn ghost" value="vr">${ICONS.vr} Play in VR</button>` : ''}
       </div>
     </header>
     <section>
@@ -576,6 +583,10 @@ $('#start-dialog').addEventListener('close', (e) => {
     startMode(s.mode || 'free', { build: decodeBuild(encodeBuild(s.build || {})), walk: true });
   } else if (v === 'free') startMode('free', { fresh: true, walk: true });
   else if (v === 'help') { openHelp(true); }
+  else if (v === 'vr') {
+    if (state.mode === null) startMode('free', { fresh: true });
+    vr.enter().catch((err) => toast(`Couldn't start VR: ${esc(err.message || err)}`, 'bad'));
+  }
   else if (v.startsWith('challenge:')) startMode(v.slice(10), { fresh: true, walk: true });
   else if (state.mode === null) startMode('free', { fresh: true, walk: true });
 });
@@ -628,13 +639,12 @@ function openHelp(fromStart = false) {
       <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div><div><kbd>Mouse</kbd> look</div><div><kbd>Shift</kbd> run</div>
       <div><kbd>E</kbd> interact</div><div><kbd>Esc</kbd> free the mouse</div><div><kbd>E</kbd> at the desk: back to bench</div>
     </div>
+    <h3 class="help-sub">In VR</h3>
+    <p class="muted small">On a VR headset, press <em>Enter VR</em>. Left stick walks, right stick snap-turns, the trigger selects or teleports to where you point on the floor, and the grip opens the build menu. Point at display cases, posters, the kiosk or the workbench to use them.</p>
     <details class="credits"><summary>Credits</summary>
-      <p>Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and Vite. The room, case, coolers, memory, power supply, drives, textures and sounds are all generated in code.</p>
-      <p>3D models used under CC BY 4.0:</p>
+      <p>Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and Vite. The showroom, the case and every part model (graphics cards, processors, motherboards, coolers, memory, power supplies, drives), plus textures and sounds, are generated in code.</p>
+      <p>One 3D model used under CC BY 4.0:</p>
       <ul>
-        <li>CPU: "3D PBR Quantum GenX3 Processor" by <a href="https://sketchfab.com/mustafaozgen" target="_blank" rel="noopener">Mustafa Özgen</a></li>
-        <li>GPU: "RTX 3080ti Graphics Card 3d Model" by <a href="https://sketchfab.com/arhamabdullahanimates" target="_blank" rel="noopener">Arham Abdullah</a></li>
-        <li>Motherboard: "motherbard" by <a href="https://sketchfab.com/armanen07" target="_blank" rel="noopener">emperorsAmar</a></li>
         <li>M.2 SSD: "m2ssd_Painter" by <a href="https://sketchfab.com/Igor.Jop" target="_blank" rel="noopener">Igor.Jop</a></li>      </ul>
       <p>Part names belong to their manufacturers. Prices and performance figures are illustrative.</p>
     </details>
@@ -903,23 +913,59 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === '?') openHelp();
 });
 
-// Optional WebXR viewing mode
-if (navigator.xr?.isSessionSupported) {
+// ---------------------------------------------------------------------------
+// VR (WebXR): the same showroom and bench, driven by controllers and in-world panels
+
+
+function setupVR() {
+  vr = createVR(workshop, {
+    getBuild: () => state.build,
+    getAnalysis: () => analysis,
+    getMode: () => {
+      const ch = CHALLENGE_BY_ID[state.mode];
+      return ch ? { label: `Challenge · ${ch.title}`, budget: ch.budget } : { label: 'Free build' };
+    },
+    isPowered: () => state.powered,
+    isBusy: () => state.busy,
+    install: (id) => installPart(id),
+    remove: (cat) => removePart(cat),
+    power: () => (state.powered ? powerOff() : powerOn()),
+    getPoster: (id) => workshop.showroom?.posters.get(id),
+    challengeSummary: (a) => {
+      const ch = CHALLENGE_BY_ID[state.mode];
+      if (!ch) return null;
+      const sc = scoreChallenge(ch, a);
+      return { title: ch.title, stars: sc.stars, passed: sc.passed };
+    },
+    click: () => sfx.click(),
+    whoosh: () => sfx.remove(),
+    onEnter: () => {
+      document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+      if (state.mode === null) { state.mode = 'free'; render(); }
+      exitWalk({ toBench: false });
+      workshop.showroom?.setBeacon(true);
+      $('#app').classList.add('in-vr');
+    },
+    onExit: () => {
+      workshop.showroom?.setBeacon(false);
+      $('#app').classList.remove('in-vr');
+      render();
+      workshop.view('home');
+    },
+  });
+  if (!navigator.xr?.isSessionSupported) return;
   navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
     if (!ok) return;
+    vrSupported = true;
+    if ($('#start-dialog').open) openStart(); // add the "Play in VR" button
     const btn = document.createElement('button');
-    btn.className = 'icon-btn';
-    btn.title = 'View in VR';
-    btn.setAttribute('aria-label', 'View in VR');
-    btn.innerHTML = ICONS.vr;
+    btn.className = 'btn small walk-btn vr-btn';
+    btn.title = 'Play in VR: walk the showroom and build with your controllers';
+    btn.innerHTML = `${ICONS.vr}<span>Enter VR</span>`;
     $('#vr-slot').append(btn);
-    const r = workshop.renderer;
-    btn.addEventListener('click', async () => {
-      if (r.xr.isPresenting) { r.xr.getSession().end(); return; }
-      const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
-      await r.xr.setSession(session);
-      const base = r.xr.getReferenceSpace();
-      r.xr.setReferenceSpace(base.getOffsetReferenceSpace(new XRRigidTransform({ x: 0.1, y: 0, z: -1.0 })));
+    btn.addEventListener('click', () => {
+      sfx.unlock();
+      vr.enter().catch((err) => toast(`Couldn't start VR: ${esc(err.message || err)}`, 'bad'));
     });
   }).catch(() => {});
 }
@@ -931,6 +977,7 @@ if (navigator.xr?.isSessionSupported) {
   const fill = $('#loader-fill');
   await workshop.preload((p) => { fill.style.width = `${Math.round(p * 100)}%`; });
   $('#loader-text').textContent = 'Ready';
+  setupVR();
   $('#loader').classList.add('done');
 
   if (!loadFromHash()) {

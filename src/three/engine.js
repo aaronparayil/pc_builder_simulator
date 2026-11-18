@@ -32,6 +32,11 @@ export function createEngine(container) {
   scene.environmentIntensity = 0.28;
 
   const camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.02, 40);
+  // The camera sits in a rig. On desktop the rig stays at the origin; in VR it is
+  // what locomotion and teleporting move, since the headset drives the camera itself.
+  const rig = new THREE.Group();
+  rig.add(camera);
+  scene.add(rig);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -98,5 +103,5 @@ export function createEngine(container) {
   }
   new ResizeObserver(resize).observe(container);
 
-  return { renderer, scene, camera, controls, tween, flyTo, cancelFly: () => { cameraTween++; }, loop, state, onUpdate: (fn) => updaters.add(fn) };
+  return { renderer, scene, camera, rig, controls, tween, flyTo, cancelFly: () => { cameraTween++; }, loop, state, onUpdate: (fn) => updaters.add(fn) };
 }

@@ -303,7 +303,7 @@ kbd { font-family: var(--mono); font-size: 11.5px; padding: 2px 6px; border-radi
 .walk-card .keys { grid-template-columns: 1fr 1fr; }
 .walk-card .btn { justify-self: start; }
 .help-sub { margin: 4px 0 -8px; font-size: 16px; }
-@media (pointer: coarse) { .walk-btn { display: none; } }
+@media (pointer: coarse) { .walk-btn:not(.vr-btn) { display: none; } }
 
 /* ---------- showcase & poster dialogs ---------- */
 dialog#showcase-dialog, dialog#compare-dialog { width: min(980px, calc(100vw - 24px)); }

@@ -10,7 +10,7 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 | --- | --- |
 | ![Display cases of processors and graphics cards with price plaques](docs/display-cases.jpg) | ![Info posters on the showroom wall: bottlenecks, build order and power budget](docs/posters.jpg) |
 | **Display cases.** Every part in the catalog on lit shelves, with price and spec plaques. | **Info posters.** The rules of the game, drawn from the parts data. |
-| ![A powered-on build on the workbench with the benchmark on the monitor](docs/bench.jpg) | ![Close-up of a powered build with a liquid cooler and RGB memory](docs/inside.jpg) |
+| ![A powered-on build on the workbench with the benchmark on the monitor](docs/bench.jpg) | ![Close-up of a powered build: RTX 4090, liquid cooler and RGB memory on a Z790 board](docs/inside.jpg) |
 | **The workbench.** Power on to run a POST check and benchmark. | **Inside the case.** Every part mounts in its real slot. |
 
 ## What you can do
@@ -22,6 +22,7 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 - **Take on challenges.** Six briefs, from a $800 1080p gamer to a 4K no-compromise build, each with three stars to earn. Progress is saved in the browser.
 - **Walk the showroom.** Every session starts at the showroom entrance: explore on foot with WASD and the mouse, then walk to the glowing workbench and press E to start building. You can leave the bench to explore again at any time. Glass display cases hold every graphics card, processor, memory kit and drive with price plaques; aim at one and press E to browse it or add it to your build.
 - **Read the walls.** Seven info posters explain the rules of the game (sockets, DDR4 vs DDR5, power budgets, bottlenecks, cooling, storage speeds and the build order), each readable full-size with E.
+- **Play in VR.** On a WebXR headset (Quest, Vision Pro, PC VR), the whole game works with controllers: thumbstick walking, snap turning, point-and-teleport, laser pointers, and floating panels for the build menu, comparison charts, posters and boot results.
 - **Compare before you buy.** Side-by-side charts for CPUs (gaming, multi-core, threads, power, price, value) and GPUs (1080p/1440p/4K FPS, VRAM, power, price, value). Pick any part as the baseline and every other bar shows its difference; a table view is one click away.
 - **Share a build.** One click copies a link that rebuilds your exact PC for whoever opens it.
 
@@ -30,15 +31,15 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 | Area | Approach |
 | --- | --- |
 | Rendering | [three.js](https://threejs.org) with ACES tone mapping, soft shadows and a generated room environment for reflections |
-| Scene | The workshop, case, fans, coolers, memory, power supply and drives are built in code from primitives. Posters, desk mat and wood textures are drawn on canvases at runtime |
-| Models | CPU, GPU, motherboard and M.2 SSD are glTF models compressed with [glTF Transform](https://gltf-transform.dev) (meshopt geometry + WebP textures), which took them from 94 MB to 2.2 MB |
+| Scene | The showroom, case and almost every part are built in code. Each product has its own model made to its real dimensions: graphics cards with their true length, slot thickness and fan count; AMD AM4, AM5 and Intel LGA1700 CPU packages with printed lids; ATX motherboards themed per chipset with the right socket. Posters and textures are drawn on canvases at runtime |
+| Models | The one scanned asset, an M.2 SSD, is a glTF model compressed with [glTF Transform](https://gltf-transform.dev) (meshopt geometry + WebP textures) to 160 KB |
 | Game logic | `src/logic/analyze.js` is a pure, framework-free rules engine: compatibility checks, power draw, and a small performance model (min of CPU-bound and GPU-bound frame rate, with memory and thermal modifiers) |
 | Sound | Every sound effect is synthesised with the Web Audio API, so there are no audio files |
 | UI | Vanilla JS and CSS, native `<dialog>` modals, keyboard shortcuts, a responsive bottom-sheet layout on phones |
 | Quality | `node --test` unit tests, including a brute-force search over the whole catalog proving every challenge can be completed with three stars |
 | Delivery | Vite build deployed to GitHub Pages by GitHub Actions on every push to `main` |
 
-The whole site is about 3 MB.
+The whole site is under 1 MB.
 
 ## Run it locally
 
@@ -67,6 +68,7 @@ npm run preview   # serve the production build
 | `1`–`7` | Jump to a build step |
 | `F` | Walk around the showroom (`WASD` move, mouse look, `Shift` run, `E` interact, `Esc` free the mouse) |
 | `C` | Compare CPUs and GPUs |
+| VR | Left stick walk · right stick snap turn · trigger select / teleport · grip build menu |
 | `P` | Power on / shut down |
 | `R` | Reset camera |
 | `M` | Mute |
@@ -85,6 +87,9 @@ src/
   three/room.js          The room shell, workbench, monitor, shelves, lights
   three/showroom.js      Display cases, info posters, compare kiosk, decor
   three/walk.js          First-person controller: pointer lock, collisions, aim-to-interact
+  three/vr.js            WebXR: controllers, laser pointers, locomotion, teleport
+  three/vrPanel.js       Canvas-drawn panels with clickable buttons for VR
+  ui/vrViews.js          The VR panels: build menu, compare, posters, results, help
   three/pcCase.js        Procedural case, fans and slot positions
   three/parts.js         Model loading plus procedural parts
   three/workshop.js      Installs/removes parts, picking, power effects
@@ -98,14 +103,11 @@ tools/                   Blender script used to prototype a motherboard model
 
 ## Credits
 
-3D models used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
+3D model used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
 
-- CPU: [3D PBR Quantum GenX3 Processor](https://sketchfab.com/3d-models/3d-pbr-quantum-genx3-processor-cpu-imaginary-a50bafa2d9914caa9bf185cd16e6935f) by Mustafa Özgen
-- GPU: [RTX 3080ti Graphics Card 3d Model](https://sketchfab.com/3d-models/rtx-3080ti-graphics-card-3d-model-7c90da836c4a43ee99afbe0c0f39cf12) by Arham Abdullah
-- Motherboard: [motherbard](https://sketchfab.com/3d-models/motherbard-2699be93369c4b15ab8b5f3d4175c81e) by emperorsAmar
 - M.2 SSD: [m2ssd_Painter](https://sketchfab.com/3d-models/m2ssd-painter-ccda7c201091445087c02692444641c2) by Igor.Jop
 
-The models were re-compressed and re-oriented for this project. Product names belong to their manufacturers. Prices and performance figures are illustrative estimates, not real benchmark results.
+The model was re-compressed for this project; the Gen4 drive adds a heatsink built in code. Product names belong to their manufacturers. Prices and performance figures are illustrative estimates, not real benchmark results.
 
 ## Background
 
