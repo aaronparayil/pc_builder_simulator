@@ -1,10 +1,17 @@
 # Rig Builder: 3D PC Building Simulator
 
-Build a PC part by part in a 3D workshop, right in the browser. Pick components from a catalog, watch them install into the case, catch compatibility mistakes before they cost you, then power the machine on and see how it benchmarks.
+Walk into a 3D PC showroom, browse the parts on display, then head to the workbench and build a PC part by part, right in the browser. Pick components, watch them install into the case, catch compatibility mistakes before they cost you, then power the machine on and see how it benchmarks.
 
-**[▶ Play it live](https://aaronparayil.github.io/pc_builder_simulator/)**
+**[▶ Play it live](https://aaronkp.tech/pc_builder_simulator/)**
 
-![A finished build inside the case on the workbench](docs/hero.jpg)
+![The showroom: display cases along the walls, the compare kiosk on the logo rug, and the glowing workbench at the back](docs/showroom.jpg)
+
+| | |
+| --- | --- |
+| ![Display cases of processors and graphics cards with price plaques](docs/display-cases.jpg) | ![Info posters on the showroom wall: bottlenecks, build order and power budget](docs/posters.jpg) |
+| **Display cases.** Every part in the catalog on lit shelves, with price and spec plaques. | **Info posters.** The rules of the game, drawn from the parts data. |
+| ![A powered-on build on the workbench with the benchmark on the monitor](docs/bench.jpg) | ![Close-up of a powered build with a liquid cooler and RGB memory](docs/inside.jpg) |
+| **The workbench.** Power on to run a POST check and benchmark. | **Inside the case.** Every part mounts in its real slot. |
 
 ## What you can do
 
@@ -17,8 +24,6 @@ Build a PC part by part in a 3D workshop, right in the browser. Pick components 
 - **Read the walls.** Seven info posters explain the rules of the game (sockets, DDR4 vs DDR5, power budgets, bottlenecks, cooling, storage speeds and the build order), each readable full-size with E.
 - **Compare before you buy.** Side-by-side charts for CPUs (gaming, multi-core, threads, power, price, value) and GPUs (1080p/1440p/4K FPS, VRAM, power, price, value). Pick any part as the baseline and every other bar shows its difference; a table view is one click away.
 - **Share a build.** One click copies a link that rebuilds your exact PC for whoever opens it.
-
-![A powered-on build with a liquid cooler and RGB memory](docs/inside.jpg)
 
 ## How it's built
 

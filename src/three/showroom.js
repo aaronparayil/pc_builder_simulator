@@ -57,16 +57,17 @@ export const INFO_POSTERS = [
     id: 'anatomy', color: '#5eead4', eyebrow: 'Field notes 01', title: 'Anatomy of a build',
     intro: 'Seven parts, installed in roughly this order. Everything plugs into the motherboard.',
     body(ctx, x, y, w) {
+      // Seven steps must fit above the footer (canvas is 1200 tall)
       CATEGORIES.forEach((c, i) => {
         ctx.fillStyle = TEAL;
-        ctx.font = `700 34px ${MONO}`;
-        ctx.fillText(String(i + 1).padStart(2, '0'), x, y + 34);
+        ctx.font = `700 30px ${MONO}`;
+        ctx.fillText(String(i + 1).padStart(2, '0'), x, y + 30);
         ctx.fillStyle = '#e6edf3';
-        ctx.font = `600 34px ${SANS}`;
-        ctx.fillText(c.label, x + 80, y + 34);
+        ctx.font = `600 30px ${SANS}`;
+        ctx.fillText(c.label, x + 72, y + 30);
         ctx.fillStyle = '#8b95a7';
-        ctx.font = `400 24px ${SANS}`;
-        y = wrap(ctx, c.hint, x + 80, y + 70, w - 80, 32) + 18;
+        ctx.font = `400 22px ${SANS}`;
+        y = wrap(ctx, c.hint, x + 72, y + 58, w - 72, 27) - 2;
       });
     },
   },
@@ -452,7 +453,7 @@ export function buildShowroom(scene) {
     }),
   }));
   rug.rotation.x = -Math.PI / 2;
-  rug.rotation.z = Math.PI;
+  // readable as you walk in from the entrance
   rug.position.set(0, 0.004, 5.3);
   rug.receiveShadow = true;
   root.add(rug);
