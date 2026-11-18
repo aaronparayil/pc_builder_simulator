@@ -25,7 +25,7 @@ export function createEngine(container) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07080c);
-  scene.fog = new THREE.Fog(0x07080c, 5, 11);
+  scene.fog = new THREE.Fog(0x07080c, 9, 26);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -52,9 +52,11 @@ export function createEngine(container) {
     });
   }
 
+  const state = { orbit: true }; // false while the first-person walk mode owns the camera
   let cameraTween = 0;
   function flyTo(position, target, duration = 1.0) {
     const id = ++cameraTween;
+    if (!state.orbit) return Promise.resolve(); // the walker owns the camera
     const p0 = camera.position.clone();
     const t0 = controls.target.clone();
     const p1 = position.clone();
@@ -62,7 +64,7 @@ export function createEngine(container) {
     return tween({
       duration,
       onUpdate: (k) => {
-        if (id !== cameraTween) return;
+        if (id !== cameraTween || !state.orbit) return;
         camera.position.lerpVectors(p0, p1, k);
         controls.target.lerpVectors(t0, t1, k);
       },
@@ -83,7 +85,7 @@ export function createEngine(container) {
       if (k >= 1) { tweens.delete(tw); tw.resolve(); }
     }
     for (const fn of updaters) fn(dt, now / 1000);
-    controls.update();
+    if (state.orbit) controls.update();
     renderer.render(scene, camera);
   };
   renderer.setAnimationLoop(loop);
@@ -96,5 +98,5 @@ export function createEngine(container) {
   }
   new ResizeObserver(resize).observe(container);
 
-  return { renderer, scene, camera, controls, tween, flyTo, loop, onUpdate: (fn) => updaters.add(fn) };
+  return { renderer, scene, camera, controls, tween, flyTo, cancelFly: () => { cameraTween++; }, loop, state, onUpdate: (fn) => updaters.add(fn) };
 }

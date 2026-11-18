@@ -22,5 +22,8 @@ export const ICONS = {
   x: svg('<path d="M18 6 6 18M6 6l12 12"/>', 16),
   lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 16),
   star: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="m12 2.5 2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>',
+  walk: svg('<circle cx="13" cy="4" r="2"/><path d="m9 20 3-6 3 3v4M7 12l3-4 4 1 3 3M10 8l-1 6"/>', 18),
+  bench: svg('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>', 18),
+  chart: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', 18),
   vr: svg('<path d="M3 8h18v8h-5l-2-3h-4l-2 3H3z"/><circle cx="7.5" cy="12" r="1"/><circle cx="16.5" cy="12" r="1"/>'),
 };

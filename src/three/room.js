@@ -3,6 +3,28 @@ import { floorTexture, pegboardTexture, woodTexture, deskMatTexture, posterTextu
 
 export const DESK_TOP = 0.75;
 
+/** The walkable showroom (metres). The workbench sits at the origin against the back wall. */
+export const ROOM = { minX: -5.5, maxX: 5.5, minZ: -0.95, maxZ: 8.5, H: 3.2 };
+
+function panelTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 512;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, '#262a35');
+  g.addColorStop(1, '#1b1e26');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 512);
+  ctx.fillStyle = '#0a0b0e';
+  ctx.fillRect(0, 0, 3, 512);
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.fillRect(3, 0, 2, 512);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 function mesh(geo, mat, { cast = true, receive = true } = {}) {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = cast;
@@ -16,43 +38,73 @@ export function buildRoom(scene) {
   const root = new THREE.Group();
   scene.add(root);
 
-  // Floor and walls
-  const floor = mesh(new THREE.PlaneGeometry(14, 14),
+  const { minX, maxX, minZ, maxZ, H } = ROOM;
+  const W = maxX - minX, D = maxZ - minZ, cz = (minZ + maxZ) / 2;
+
+  // Floor, walls and ceiling
+  const floor = mesh(new THREE.PlaneGeometry(W + 0.2, D + 0.2),
     new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.55, metalness: 0.1 }), { cast: false });
   floor.rotation.x = -Math.PI / 2;
+  floor.position.z = cz;
   root.add(floor);
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: pegboardTexture(), roughness: 0.85 });
-  const backWall = mesh(new THREE.PlaneGeometry(6, 3.2), wallMat, { cast: false });
-  backWall.position.set(0, 1.6, -0.95);
+  const peg = pegboardTexture();
+  peg.repeat.set(W * 1.35, 3);
+  const backWall = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: peg, roughness: 0.85 }), { cast: false });
+  backWall.position.set(0, H / 2, minZ);
   root.add(backWall);
-  const sideMat = new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.9 });
-  const leftWall = mesh(new THREE.PlaneGeometry(6, 3.2), sideMat, { cast: false });
+  const panels = panelTexture();
+  panels.repeat.set(D / 1.2, 1);
+  const sideMat = new THREE.MeshStandardMaterial({ map: panels, roughness: 0.9 });
+  const leftWall = mesh(new THREE.PlaneGeometry(D, H), sideMat, { cast: false });
   leftWall.rotation.y = Math.PI / 2;
-  leftWall.position.set(-2.4, 1.6, 2);
-  root.add(leftWall);
+  leftWall.position.set(minX, H / 2, cz);
   const rightWall = leftWall.clone();
   rightWall.rotation.y = -Math.PI / 2;
-  rightWall.position.set(2.4, 1.6, 2);
-  root.add(rightWall);
+  rightWall.position.x = maxX;
+  const frontPanels = panels.clone();
+  frontPanels.repeat.set(W / 1.2, 1);
+  const frontWall = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: frontPanels, roughness: 0.9 }), { cast: false });
+  frontWall.rotation.y = Math.PI;
+  frontWall.position.set(0, H / 2, maxZ);
+  const ceiling = mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x0b0c10, roughness: 1 }), { cast: false });
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(0, H, cz);
+  root.add(leftWall, rightWall, frontWall, ceiling);
+
+  // Ceiling light strips and skirting glow
+  const stripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdde7ff).multiplyScalar(1.4), toneMapped: false });
+  for (const x of [-3, 0, 3]) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, D - 1.2), stripMat);
+    strip.position.set(x, H - 0.01, cz);
+    root.add(strip);
+  }
+  const skirtMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.3), toneMapped: false });
+  for (const [x, z, len, rot] of [[minX + 0.01, cz, D, Math.PI / 2], [maxX - 0.01, cz, D, Math.PI / 2], [0, maxZ - 0.01, W, 0]]) {
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.012), skirtMat);
+    skirt.rotation.y = rot;
+    skirt.position.set(x, 0.06, z);
+    root.add(skirt);
+  }
 
   // Neon tube along the back wall
   const neonColor = new THREE.Color(0x5eead4);
   const neon = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 2.6, 4, 12),
     new THREE.MeshBasicMaterial({ color: neonColor.clone().multiplyScalar(2.2), toneMapped: false }));
   neon.rotation.z = Math.PI / 2;
-  neon.position.set(0, 2.05, -0.93);
+  neon.position.set(0, 2.05, minZ + 0.02);
   root.add(neon);
 
-  // Posters
-  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2]].forEach(([x, y, i]) => {
+  // Art posters on the back wall
+  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2], [-3.4, 1.65, 1], [3.3, 1.7, 0]].forEach(([x, y, i]) => {
     const p = mesh(new THREE.PlaneGeometry(0.48, 0.64), new THREE.MeshStandardMaterial({ map: posterTexture(i), roughness: 0.6 }), { cast: false });
-    p.position.set(x, y, -0.94);
+    p.position.set(x, y, minZ + 0.01);
     root.add(p);
   });
 
   // Desk
   const desk = new THREE.Group();
+  desk.userData.interact = { kind: 'bench', label: 'Work on your build' };
   const top = mesh(new THREE.BoxGeometry(1.8, 0.04, 0.85), new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.55 }));
   top.position.y = DESK_TOP - 0.02;
   desk.add(top);
@@ -122,8 +174,22 @@ export function buildRoom(scene) {
   const rimB = new THREE.PointLight(0xff3d7f, 2.2, 3.5, 2);
   rimB.position.set(1.2, 1.3, -0.5);
   scene.add(rimA, rimB);
+  // Showroom lighting: soft pools under the ceiling strips (no shadows, cheap)
+  for (const [x, z] of [[-3, 2.4], [3, 2.4], [-3, 6.2], [3, 6.2], [0, 4.6]]) {
+    const l = new THREE.PointLight(0xdde7ff, 12, 8, 2);
+    l.position.set(x, ROOM.H - 0.3, z);
+    scene.add(l);
+  }
 
-  return { monitor, lights: { key, fill, rimA, rimB } };
+  monitor.group.userData.interact = desk.userData.interact;
+
+  // Things the walker bumps into, as world-space XZ boxes
+  const colliders = [
+    { minX: -0.95, maxX: 0.95, minZ: -0.95, maxZ: 0.46 }, // desk
+    { minX: -2.1, maxX: -0.9, minZ: -0.95, maxZ: -0.2 }, // parts shelf
+  ];
+
+  return { monitor, lights: { key, fill, rimA, rimB }, colliders };
 }
 
 function buildPlant(x, y, z) {

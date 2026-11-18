@@ -13,6 +13,9 @@ Build a PC part by part in a 3D workshop, right in the browser. Pick components 
 - **Shop on a budget.** Every part has a price and spec chips. The catalog shows whether each option works with what's already installed, and what a swap would cost.
 - **Power on.** The PC runs a POST check on the monitor on the desk. If something is wrong it beeps, flags the faulty part and explains how to fix it. If it boots, fans spin up, RGB lights come on and you get frame-rate estimates at 1080p, 1440p and 4K, plus a creator score and a rig score.
 - **Take on challenges.** Six briefs, from a $800 1080p gamer to a 4K no-compromise build, each with three stars to earn. Progress is saved in the browser.
+- **Walk the showroom.** Leave the bench and explore on foot with WASD and the mouse. Glass display cases hold every graphics card, processor, memory kit and drive with price plaques; aim at one and press E to browse it or add it to your build.
+- **Read the walls.** Seven info posters explain the rules of the game (sockets, DDR4 vs DDR5, power budgets, bottlenecks, cooling, storage speeds and the build order), each readable full-size with E.
+- **Compare before you buy.** Side-by-side charts for CPUs (gaming, multi-core, threads, power, price, value) and GPUs (1080p/1440p/4K FPS, VRAM, power, price, value). Pick any part as the baseline and every other bar shows its difference; a table view is one click away.
 - **Share a build.** One click copies a link that rebuilds your exact PC for whoever opens it.
 
 ![A powered-on build with a liquid cooler and RGB memory](docs/inside.jpg)
@@ -57,6 +60,8 @@ npm run preview   # serve the production build
 | Click a part in the case | Select it in the checklist |
 | Drag a catalog card onto the 3D view | Install that part |
 | `1`–`7` | Jump to a build step |
+| `F` | Walk around the showroom (`WASD` move, mouse look, `Shift` run, `E` interact, `Esc` free the mouse) |
+| `C` | Compare CPUs and GPUs |
 | `P` | Power on / shut down |
 | `R` | Reset camera |
 | `M` | Mute |
@@ -72,11 +77,14 @@ src/
   data/challenges.js     Challenge briefs and star goals
   logic/analyze.js       Compatibility, power and performance rules
   three/engine.js        Renderer, camera, controls and tweening
-  three/room.js          The workshop: desk, monitor, shelves, lights
+  three/room.js          The room shell, workbench, monitor, shelves, lights
+  three/showroom.js      Display cases, info posters, compare kiosk, decor
+  three/walk.js          First-person controller: pointer lock, collisions, aim-to-interact
   three/pcCase.js        Procedural case, fans and slot positions
   three/parts.js         Model loading plus procedural parts
   three/workshop.js      Installs/removes parts, picking, power effects
   three/textures.js      Canvas-generated textures and posters
+  ui/compare.js          CPU/GPU comparison charts and table
   ui/                    Monitor screens, sound synth, icons
 public/models/           Compressed glTF models
 test/                    Unit tests

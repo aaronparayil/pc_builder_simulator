@@ -6,6 +6,7 @@ import { createWorkshop } from './three/workshop.js';
 import { drawBench, drawChecklist, drawFail, drawOff, drawPost } from './ui/screens.js';
 import { sfx, isMuted, setMuted } from './ui/audio.js';
 import { ICONS } from './ui/icons.js';
+import { renderCompare } from './ui/compare.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const money = (n) => `$${n.toLocaleString('en-US')}`;
@@ -46,9 +47,29 @@ const workshop = createWorkshop($('#viewport'), {
     sfx.click();
     selectCategory(category, { focus: true, openSheet: 'parts' });
   },
+  onWalkFocus(target) {
+    const p = $('#walk-prompt');
+    $('#crosshair').classList.toggle('on', Boolean(target));
+    if (!target) { p.classList.remove('show'); return; }
+    p.innerHTML = `<kbd>E</kbd> ${esc(target.label)}`;
+    p.classList.add('show');
+  },
+  onWalkInteract(target) {
+    sfx.click();
+    if (target.kind === 'bench') exitWalk();
+    else if (target.kind === 'cabinet') openShowcase(target.category);
+    else if (target.kind === 'part') openShowcase(target.category, target.partId);
+    else if (target.kind === 'poster') openPoster(target.id);
+    else if (target.kind === 'compare') openCompare();
+  },
+  onWalkLock(locked) {
+    $('#app').classList.toggle('walk-locked', locked);
+    $('#walk-hint').innerHTML = `${workshop.walker?.dragLook ? '<kbd>Drag</kbd> look · ' : ''}<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>E</kbd> interact · <kbd>Esc</kbd> ${workshop.walker?.dragLook ? 'menu' : 'free mouse'}`;
+    if (!locked) { $('#walk-prompt').classList.remove('show'); $('#crosshair').classList.remove('on'); }
+  },
 });
 
-if (import.meta.env.DEV) window.__rig = { state, workshop, get analysis() { return analysis; } };
+if (import.meta.env.DEV) window.__rig = { state, workshop, openShowcase, openCompare, openPoster, enterWalk, exitWalk, get analysis() { return analysis; } };
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -157,6 +178,7 @@ function renderCatalog() {
   }
   if (cat.id === 'cooler' && analysis.parts.cpu?.stockCooler) notes.push(`<div class="note">${ICONS.check}<span>Your ${esc(analysis.parts.cpu.name)} includes a stock cooler, so this step is optional.</span></div>`);
   if (cat.id === 'gpu' && analysis.parts.cpu?.igpu) notes.push(`<div class="note">${ICONS.check}<span>Your CPU has integrated graphics (${esc(analysis.parts.cpu.igpu.name)}). A GPU is optional, but needed for real gaming.</span></div>`);
+  if (cat.id === 'cpu' || cat.id === 'gpu') notes.push(`<button class="btn small ghost compare-link" data-compare="${cat.id}">${ICONS.chart} Compare ${cat.id === 'cpu' ? 'processors' : 'graphics cards'} side by side</button>`);
   $('#cat-note').innerHTML = notes.join('');
 
   $('#cat-list').innerHTML = PARTS[cat.id].map((part) => {
@@ -240,7 +262,7 @@ function syncCase(animate = true) {
 function selectCategory(category, { focus = false, openSheet = null } = {}) {
   state.selected = category;
   render();
-  if (focus && !state.powered) workshop.focusCategory(category);
+  if (focus && !state.powered && !walking()) workshop.focusCategory(category);
   if (openSheet && window.matchMedia('(max-width: 860px)').matches) {
     $('#app').dataset.sheet = '';
     setSheet(openSheet);
@@ -285,7 +307,7 @@ async function installPart(partId) {
   if (next) {
     state.selected = next;
     render();
-    setTimeout(() => { if (state.selected === next && !state.busy) workshop.focusCategory(next); }, 900);
+    setTimeout(() => { if (state.selected === next && !state.busy && !walking()) workshop.focusCategory(next); }, 900);
   } else {
     render();
   }
@@ -541,7 +563,7 @@ function openStart() {
       </div>
     </section>
   </form>`;
-  if (!dlg.open) dlg.showModal();
+  showDialog(dlg);
 }
 
 $('#start-dialog').addEventListener('close', (e) => {
@@ -558,6 +580,7 @@ $('#start-dialog').addEventListener('close', (e) => {
 });
 
 function startMode(mode, { fresh = false, build = null } = {}) {
+  exitWalk();
   const prevMode = state.mode;
   state.mode = mode;
   if (state.powered) powerOff(true);
@@ -584,12 +607,19 @@ function openHelp(fromStart = false) {
       <li><strong>Pick a part.</strong> The checklist on the left walks you through each step. The catalog on the right shows every option, its price, and whether it works with what you already installed.</li>
       <li><strong>Install it.</strong> Click <em>Install</em> or drag a card onto the 3D case. Parts mount in order: the board first, then the CPU, then its cooler.</li>
       <li><strong>Watch the warnings.</strong> Socket mismatches, wrong memory type, a weak PSU or an under-rated cooler are all flagged before you boot.</li>
+      <li><strong>Compare before you buy.</strong> The CPU and GPU steps have side-by-side charts for gaming, multi-core, power, price and value.</li>
       <li><strong>Power on.</strong> The PC runs a POST check. If it passes you get benchmark estimates. In challenge mode, you earn stars.</li>
     </ol>
     <div class="keys">
       <div><kbd>Drag</kbd> orbit camera</div><div><kbd>Right-drag</kbd> pan</div><div><kbd>Scroll</kbd> zoom</div>
       <div><kbd>Click part</kbd> select it</div><div><kbd>1</kbd>–<kbd>7</kbd> jump to step</div><div><kbd>P</kbd> power</div>
-      <div><kbd>R</kbd> reset camera</div><div><kbd>M</kbd> mute</div><div><kbd>Esc</kbd> close</div>
+      <div><kbd>R</kbd> reset camera</div><div><kbd>C</kbd> compare parts</div><div><kbd>M</kbd> mute</div>
+    </div>
+    <h3 class="help-sub">Walking the showroom</h3>
+    <p class="muted small">Press <kbd>F</kbd> or <em>Walk around</em> to leave the bench and explore. Display cases hold every GPU, CPU, memory kit and drive; posters on the walls explain the rules; the kiosk opens the comparison charts.</p>
+    <div class="keys">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div><div><kbd>Mouse</kbd> look</div><div><kbd>Shift</kbd> run</div>
+      <div><kbd>E</kbd> interact</div><div><kbd>Esc</kbd> free the mouse</div><div><kbd>E</kbd> at the desk: back to bench</div>
     </div>
     <details class="credits"><summary>Credits</summary>
       <p>Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and Vite. The room, case, coolers, memory, power supply, drives, textures and sounds are all generated in code.</p>
@@ -603,7 +633,7 @@ function openHelp(fromStart = false) {
     </details>
     <footer class="dlg-actions"><button class="btn primary" value="${fromStart ? 'start' : 'close'}">${fromStart ? 'Back' : 'Got it'}</button></footer>
   </form>`;
-  dlg.showModal();
+  showDialog(dlg);
 }
 
 $('#help-dialog').addEventListener('close', (e) => {
@@ -627,11 +657,159 @@ async function share() {
 }
 
 // ---------------------------------------------------------------------------
+// Walk-around showroom
+
+const walking = () => Boolean(workshop.walker?.active);
+
+function enterWalk() {
+  if (!workshop.walker || walking() || state.busy) return;
+  if (state.powered) powerOff(true);
+  workshop.showSlot(null);
+  tooltip.classList.remove('show');
+  $('#app').classList.add('walking');
+  setSheet('');
+  workshop.walker.enter();
+  renderWalkButton();
+  sfx.click();
+}
+
+function exitWalk() {
+  if (!walking()) return;
+  workshop.walker.exit();
+  $('#app').classList.remove('walking', 'walk-locked');
+  renderWalkButton();
+  render();
+}
+
+function renderWalkButton() {
+  const b = $('#btn-walk');
+  b.innerHTML = walking() ? `${ICONS.bench}<span>Back to bench</span>` : `${ICONS.walk}<span>Walk around</span>`;
+  b.title = walking() ? 'Return to the workbench' : 'Explore the showroom on foot (WASD + mouse)';
+}
+
+/** Open a dialog, releasing the mouse first if we're walking. */
+function showDialog(dlg) {
+  workshop.walker?.unlock();
+  if (!dlg.open) dlg.showModal();
+}
+
+function openShowcase(category, focusId = null) {
+  const dlg = $('#showcase-dialog');
+  const cat = CATEGORY_BY_ID[category];
+  const titles = { gpu: 'Graphics cards', cpu: 'Processors', ram: 'Memory', storage: 'Storage' };
+  dlg.innerHTML = `<form method="dialog" class="dlg showcase">
+    <header class="dlg-head"><div><p class="eyebrow mono">Display case</p><h2 id="showcase-title">${esc(titles[category] || cat.label)}</h2></div>
+      <button class="icon-btn" value="close" aria-label="Close">${ICONS.x}</button></header>
+    <p class="muted">${esc(cat.hint)}</p>
+    <div class="showcase-grid">${PARTS[category].map((part) => {
+      const installed = state.build[category] === part.id;
+      const { errors, warnings } = previewPart(part, state.build);
+      const needs = REQUIRES[category].filter((r) => !state.build[r]);
+      let status = `<span class="status ok">${ICONS.check} Fits your build</span>`;
+      if (needs.length) status = `<span class="status muted">${ICONS.lock} Needs ${esc(needs.map((r) => CATEGORY_BY_ID[r].short).join(' + '))} first</span>`;
+      else if (errors.length) status = `<span class="status error">${ICONS.x} ${esc(errors[0].title)}</span>`;
+      else if (warnings.length) status = `<span class="status warn">${ICONS.warn} ${esc(warnings[0].title)}</span>`;
+      return `<article class="part-card ${installed ? 'installed' : ''} ${part.id === focusId ? 'focus' : ''}" data-showcase-part="${part.id}">
+        <div class="part-top"><h3>${esc(part.name)}</h3><span class="price mono">${money(part.price)}</span></div>
+        <ul class="chips">${part.specs.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+        ${partMetric(part)}
+        <div class="part-bottom">${status}
+          ${installed ? '<span class="status ok">In your build</span>' : `<button class="btn small accent" value="install:${part.id}" ${needs.length ? 'disabled' : ''}>Add to build</button>`}
+        </div>
+      </article>`;
+    }).join('')}</div>
+    <footer class="dlg-actions">
+      ${category === 'cpu' || category === 'gpu' ? `<button class="btn ghost" value="compare:${category}">${ICONS.chart} Compare ${category === 'cpu' ? 'CPUs' : 'GPUs'}</button>` : ''}
+      <button class="btn primary" value="close">Keep exploring</button>
+    </footer>
+  </form>`;
+  showDialog(dlg);
+  dlg.querySelector('.focus')?.scrollIntoView({ block: 'nearest' });
+}
+
+$('#showcase-dialog').addEventListener('close', (e) => {
+  const v = e.target.returnValue || '';
+  e.target.returnValue = '';
+  if (v.startsWith('install:')) {
+    const part = getPart(v.slice(8));
+    installPart(part.id).then(() => toast(`${ICONS.check} <strong>${esc(part.name)}</strong> added to the build on your workbench.`));
+  } else if (v.startsWith('compare:')) openCompare(v.slice(8));
+});
+
+function openPoster(id) {
+  const poster = workshop.showroom?.posters.get(id);
+  if (!poster) return;
+  const dlg = $('#poster-dialog');
+  dlg.innerHTML = `<form method="dialog" class="dlg poster">
+    <header class="dlg-head"><div><p class="eyebrow mono">${esc(poster.eyebrow)}</p><h2 id="poster-title">${esc(poster.title)}</h2></div>
+      <button class="icon-btn" value="close" aria-label="Close">${ICONS.x}</button></header>
+    <img src="${poster.canvas.toDataURL('image/png')}" alt="${esc(`${poster.title}. ${poster.intro}`)}" />
+  </form>`;
+  showDialog(dlg);
+}
+
+const compareState = { category: 'gpu', baseline: null, view: 'chart' };
+
+function renderCompareDialog() {
+  const c = compareState.category;
+  $('#compare-dialog').innerHTML = renderCompare({ category: c, baselineId: compareState.baseline, view: compareState.view, installedId: state.build[c] });
+}
+
+function openCompare(category = null) {
+  compareState.category = category || compareState.category;
+  compareState.baseline = null;
+  renderCompareDialog();
+  showDialog($('#compare-dialog'));
+}
+
+const compareDlg = $('#compare-dialog');
+compareDlg.addEventListener('click', (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.dataset.cmpCat) { compareState.category = t.dataset.cmpCat; compareState.baseline = null; renderCompareDialog(); sfx.click(); }
+  else if (t.dataset.cmpView) { compareState.view = t.dataset.cmpView; renderCompareDialog(); }
+  else if (t.dataset.baseline) {
+    compareState.baseline = t.dataset.baseline;
+    renderCompareDialog();
+    sfx.click();
+    compareDlg.querySelector(`[data-baseline="${t.dataset.baseline}"]`)?.focus();
+  }
+});
+compareDlg.addEventListener('change', (e) => {
+  if (e.target.matches('[data-cmp-baseline]')) { compareState.baseline = e.target.value; renderCompareDialog(); }
+});
+const chartTip = (e) => {
+  const row = e.target.closest?.('.cmp-row');
+  if (!row) { tooltip.classList.remove('show'); return; }
+  tooltip.innerHTML = `<strong>${esc(row.dataset.tip)}</strong><span class="muted small">Click to set as baseline</span>`;
+  tooltip.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 14}px)`;
+  tooltip.classList.add('show');
+};
+compareDlg.addEventListener('pointermove', chartTip);
+compareDlg.addEventListener('pointerleave', () => tooltip.classList.remove('show'));
+compareDlg.addEventListener('close', (e) => {
+  tooltip.classList.remove('show');
+  const v = e.target.returnValue || '';
+  e.target.returnValue = '';
+  if (v.startsWith('install:')) {
+    const part = getPart(v.slice(8));
+    installPart(part.id);
+    if (!walking()) selectCategory(part.category);
+  }
+});
+
+$('#walk-overlay').addEventListener('click', (e) => {
+  if (e.target.closest('[data-exit-walk]')) { exitWalk(); return; }
+  workshop.walker?.lock();
+});
+
+// ---------------------------------------------------------------------------
 // Events
 
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button');
   if (!t) return;
+  if (t.dataset.compare && !t.closest('dialog')) { openCompare(t.dataset.compare); return; }
   if (t.dataset.install) { installPart(t.dataset.install); return; }
   if (t.dataset.remove) { removePart(t.dataset.remove); return; }
   if (t.dataset.cat && !t.closest('dialog')) {
@@ -647,7 +825,10 @@ $('#btn-share').addEventListener('click', share);
 $('#btn-clear').addEventListener('click', () => {
   if (Object.values(state.build).some(Boolean) && window.confirm('Remove every part from the case?')) clearBuild();
 });
-$('#btn-view').addEventListener('click', () => workshop.view('home'));
+$('#btn-view').addEventListener('click', () => { if (!walking()) workshop.view('home'); });
+$('#btn-walk').addEventListener('click', () => (walking() ? exitWalk() : enterWalk()));
+$('#btn-compare').addEventListener('click', () => openCompare(state.selected === 'cpu' ? 'cpu' : null));
+$('#btn-compare').innerHTML = ICONS.chart;
 $('#btn-help').addEventListener('click', () => openHelp());
 $('#btn-home').addEventListener('click', openStart);
 $('#btn-sound').addEventListener('click', () => { setMuted(!isMuted()); renderSoundButton(); });
@@ -663,6 +844,7 @@ $('#btn-power .ico').innerHTML = ICONS.power;
 $('#btn-share').innerHTML = `${ICONS.share} Share`;
 $('#btn-clear').innerHTML = `${ICONS.trash} Clear`;
 renderSoundButton();
+renderWalkButton();
 
 // Drag a catalog card onto the 3D view to install it.
 const viewport = $('#viewport');
@@ -683,7 +865,14 @@ viewport.addEventListener('drop', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea') || document.querySelector('dialog[open]') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest('input, textarea, select') || document.querySelector('dialog[open]') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'c' || e.key === 'C') { openCompare(); return; }
+  if (walking()) {
+    if (e.key === 'm' || e.key === 'M') $('#btn-sound').click();
+    else if (e.key === 'Escape' && !workshop.walker.locked) exitWalk();
+    return;
+  }
+  if (e.key === 'f' || e.key === 'F') { enterWalk(); return; }
   const n = Number(e.key);
   if (n >= 1 && n <= CATEGORIES.length) selectCategory(CATEGORIES[n - 1].id, { focus: true });
   else if (e.key === 'p' || e.key === 'P') $('#btn-power').click();

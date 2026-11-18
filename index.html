@@ -21,6 +21,8 @@
         <button class="brand" id="btn-home" aria-label="Back to menu">RIG<span>//</span>BUILDER</button>
         <div id="mode-pill" class="pill" hidden></div>
         <div class="top-actions">
+          <button class="btn small walk-btn" id="btn-walk"></button>
+          <button class="icon-btn" id="btn-compare" title="Compare CPUs and GPUs (C)" aria-label="Compare parts"></button>
           <span id="vr-slot"></span>
           <button class="icon-btn" id="btn-view" title="Reset camera (R)" aria-label="Reset camera"></button>
           <button class="icon-btn" id="btn-sound" title="Sound" aria-label="Toggle sound"></button>
@@ -65,6 +67,22 @@
       <div id="tooltip" role="tooltip"></div>
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="drop-hint">Drop to install</div>
+
+      <div id="crosshair" aria-hidden="true"></div>
+      <div id="walk-prompt" role="status" aria-live="polite"></div>
+      <div id="walk-hint" class="mono"></div>
+      <div id="walk-overlay">
+        <div class="walk-card">
+          <p class="eyebrow mono">Showroom</p>
+          <h2>Click to look around</h2>
+          <div class="keys">
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div><div><kbd>Mouse</kbd> look</div>
+            <div><kbd>Shift</kbd> run</div><div><kbd>E</kbd> interact</div>
+          </div>
+          <p class="muted small">Browse the display cases, read the posters, try the compare kiosk. Press <kbd>Esc</kbd> to free the mouse.</p>
+          <button class="btn ghost small" data-exit-walk>Back to the bench</button>
+        </div>
+      </div>
     </div>
 
     <div id="loader">
@@ -78,6 +96,9 @@
     <dialog id="start-dialog" aria-labelledby="start-title"></dialog>
     <dialog id="result-dialog" aria-labelledby="result-title"></dialog>
     <dialog id="help-dialog" aria-labelledby="help-title"></dialog>
+    <dialog id="showcase-dialog" aria-labelledby="showcase-title"></dialog>
+    <dialog id="compare-dialog" aria-labelledby="compare-title"></dialog>
+    <dialog id="poster-dialog" aria-labelledby="poster-title"></dialog>
 
     <noscript>Rig Builder needs JavaScript and WebGL to run.</noscript>
     <script type="module" src="/src/main.js"></script>

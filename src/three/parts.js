@@ -289,6 +289,40 @@ export function createPartObject(part) {
   return object;
 }
 
+/**
+ * A part posed for a display case: front facing +Z, sitting on y = 0, centred on x/z,
+ * scaled up so it reads from across the room.
+ */
+export function createDisplayObject(part) {
+  let object;
+  let size; // target size of the longest side, metres
+  if (part.category === 'ram') {
+    object = buildRam(part);
+    object.rotation.y = Math.PI / 2;
+    size = 0.3;
+  } else if (part.category === 'storage' && part.form !== 'm2') {
+    object = buildBayDrive(part.form);
+    object.rotation.x = Math.PI / 2;
+    size = part.form === 'hdd' ? 0.27 : 0.22;
+  } else {
+    const tpl = templates.get(part.category);
+    object = tpl ? tpl.clone(true) : placeholder(part.category);
+    size = { gpu: 0.5, cpu: 0.2, storage: 0.26 }[part.category] || 0.2;
+  }
+  const holder = new THREE.Group();
+  holder.add(object);
+  holder.updateMatrixWorld(true);
+  let box = new THREE.Box3().setFromObject(holder);
+  const s = box.getSize(new THREE.Vector3());
+  object.scale.multiplyScalar(size / Math.max(s.x, s.y, s.z));
+  holder.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(holder);
+  const c = box.getCenter(new THREE.Vector3());
+  object.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
+  holder.userData.rgb = object.userData.rgb || [];
+  return holder;
+}
+
 /** Bounding box (case space) used for the "goes here" indicator. */
 export function slotBox(category) {
   if (category === 'cooler') {

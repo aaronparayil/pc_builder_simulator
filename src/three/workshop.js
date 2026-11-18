@@ -4,11 +4,13 @@ import { buildRoom, DESK_TOP } from './room.js';
 import { buildCase, CASE } from './pcCase.js';
 import { createPartObject, preloadModels, slotBox, templates } from './parts.js';
 import { getPart } from '../data/catalog.js';
+import { buildShowroom } from './showroom.js';
+import { createWalker } from './walk.js';
 
 const CASE_POS = new THREE.Vector3(-0.22, DESK_TOP + 0.016, -0.08);
 const CASE_ROT_Y = 0.12;
 
-export function createWorkshop(container, { onHover, onSelect } = {}) {
+export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWalkInteract, onWalkLock } = {}) {
   const engine = createEngine(container);
   const { scene, camera, controls, tween, flyTo, renderer } = engine;
   const room = buildRoom(scene);
@@ -17,6 +19,22 @@ export function createWorkshop(container, { onHover, onSelect } = {}) {
   pc.group.rotation.y = CASE_ROT_Y;
   scene.add(pc.group);
   engine.onUpdate(pc.update);
+  pc.group.userData.interact = { kind: 'bench', label: 'Work on your build' };
+
+  // The showroom needs the part models, so it is built once they have loaded.
+  let showroom = null;
+  let walker = null;
+  async function preload(onProgress) {
+    await preloadModels(onProgress);
+    showroom = buildShowroom(scene);
+    engine.onUpdate(showroom.update);
+    walker = createWalker(engine, {
+      colliders: [...room.colliders, ...showroom.colliders],
+      onFocus: (t) => onWalkFocus?.(t),
+      onInteract: (t) => onWalkInteract?.(t),
+      onLockChange: (locked) => onWalkLock?.(locked),
+    });
+  }
 
   const installed = new Map(); // category -> Object3D
   let powered = false;
@@ -204,12 +222,12 @@ export function createWorkshop(container, { onHover, onSelect } = {}) {
   let downAt = null;
   const el = renderer.domElement;
   el.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'touch' || walker?.active) return;
     setHover(pick(e));
     onHover?.(hovered ? hovered.userData.category : null, e.clientX, e.clientY);
   });
   el.addEventListener('pointerleave', () => { setHover(null); onHover?.(null); });
-  el.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+  el.addEventListener('pointerdown', (e) => { downAt = walker?.active ? null : [e.clientX, e.clientY]; });
   el.addEventListener('pointerup', (e) => {
     if (!downAt) return;
     const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
@@ -222,7 +240,9 @@ export function createWorkshop(container, { onHover, onSelect } = {}) {
   return {
     engine,
     monitor: room.monitor,
-    preload: preloadModels,
+    preload,
+    get walker() { return walker; },
+    get showroom() { return showroom; },
     sync,
     focusCategory,
     showSlot,
