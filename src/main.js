@@ -288,21 +288,22 @@ async function ensureOff() {
   if (state.powered) await powerOff(true);
 }
 
-async function installPart(partId) {
+/** Install a part. `animate: false` is used when a VR player has placed it by hand. */
+async function installPart(partId, { animate = true } = {}) {
   const part = getPart(partId);
-  if (!part || state.busy) return;
+  if (!part || state.busy) return false;
   const need = REQUIRES[part.category].filter((r) => !state.build[r]);
   if (need.length) {
     sfx.error();
     toast(`Install the <strong>${esc(CATEGORY_BY_ID[need[0]].label.toLowerCase())}</strong> first.`, 'bad');
     workshop.flash([need[0]], 0xffd166);
-    return;
+    return false;
   }
   await ensureOff();
   const wasEmpty = !state.build[part.category];
   state.build[part.category] = part.id;
-  syncCase();
-  sfx.install();
+  syncCase(animate);
+  if (animate) sfx.install();
   const { errors } = previewPart(part, state.build);
   if (errors.length) {
     toast(`${ICONS.x} ${esc(errors[0].title)}`, 'bad');
@@ -317,10 +318,12 @@ async function installPart(partId) {
     render();
   }
   checkFirstComplete();
+  return true;
 }
 
-async function removePart(category) {
-  if (state.busy || !state.build[category]) return;
+/** Remove a part (and anything mounted on it). Returns the categories removed. */
+async function removePart(category, { animate = true } = {}) {
+  if (state.busy || !state.build[category]) return [];
   await ensureOff();
   const removed = [category];
   state.build[category] = null;
@@ -336,11 +339,12 @@ async function removePart(category) {
       }
     }
   }
-  syncCase();
-  sfx.remove();
+  syncCase(animate);
+  if (animate) sfx.remove();
   if (removed.length > 1) toast(`Removed ${removed.map((c) => CATEGORY_BY_ID[c].short).join(', ')}. Those parts were mounted on it.`);
   state.selected = category;
   render();
+  return removed;
 }
 
 async function clearBuild() {
@@ -640,7 +644,7 @@ function openHelp(fromStart = false) {
       <div><kbd>E</kbd> interact</div><div><kbd>Esc</kbd> free the mouse</div><div><kbd>E</kbd> at the desk: back to bench</div>
     </div>
     <h3 class="help-sub">In VR</h3>
-    <p class="muted small">On a VR headset, press <em>Enter VR</em>. Left stick walks, right stick snap-turns, the trigger selects or teleports to where you point on the floor, and the grip opens the build menu. Point at display cases, posters, the kiosk or the workbench to use them.</p>
+    <p class="muted small">On a VR headset, press <em>Enter VR</em>. Left stick walks, right stick snap-turns, the trigger selects or teleports to where you point on the floor, and A/B/X/Y opens the build menu. Squeeze the grip to grab a part (reach for it, or point and squeeze to pull it to your hand), carry it to the open case and let go when its slot glows green. Motherboards, coolers and power supplies are on the parts table next to the workbench.</p>
     <details class="credits"><summary>Credits</summary>
       <p>Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and Vite. The showroom, the case and every part model (graphics cards, processors, motherboards, coolers, memory, power supplies, drives), plus textures and sounds, are generated in code.</p>
       <p>One 3D model used under CC BY 4.0:</p>
@@ -927,8 +931,11 @@ function setupVR() {
     },
     isPowered: () => state.powered,
     isBusy: () => state.busy,
-    install: (id) => installPart(id),
-    remove: (cat) => removePart(cat),
+    install: (id, opts) => installPart(id, opts),
+    remove: (cat, opts) => removePart(cat, opts),
+    installSound: () => sfx.install(),
+    refreshSlot: () => workshop.showSlot(state.powered ? null : state.selected),
+    errorSound: () => sfx.error(),
     power: () => (state.powered ? powerOff() : powerOn()),
     getPoster: (id) => workshop.showroom?.posters.get(id),
     challengeSummary: (a) => {

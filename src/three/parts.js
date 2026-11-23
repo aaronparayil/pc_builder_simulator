@@ -326,6 +326,40 @@ export function createPartObject(part) {
 }
 
 /**
+ * A real-size part you can carry, in case orientation, with its origin at its own
+ * centre. `target` is where that centre sits (case coordinates) once installed, so
+ * snapping is just "move the centre to target, match the case's rotation".
+ */
+export function createHeldPart(part) {
+  const obj = createPartObject(part);
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  const target = box.getCenter(new THREE.Vector3());
+  const holder = new THREE.Group();
+  obj.position.sub(target);
+  holder.add(obj);
+  holder.userData = { partId: part.id, category: part.category, rgb: obj.userData.rgb || [], size: box.getSize(new THREE.Vector3()) };
+  return { holder, target };
+}
+
+/** A real-size part laid out on the parts table: resting on y = 0, centred on x/z. */
+export function createTableObject(part) {
+  const obj = createPartObject(part);
+  obj.position.set(0, 0, 0);
+  // boards lie flat, coolers stand on their base; PSUs already sit flat
+  if (part.category === 'motherboard') obj.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+  if (part.category === 'cooler') obj.rotation.x = -Math.PI / 2;
+  const holder = new THREE.Group();
+  holder.add(obj);
+  holder.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(holder);
+  const c = box.getCenter(new THREE.Vector3());
+  obj.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
+  holder.userData.rgb = obj.userData.rgb || [];
+  return holder;
+}
+
+/**
  * A part posed for a display case: front facing +Z, sitting on y = 0, centred on x/z,
  * scaled up so it reads from across the room.
  */

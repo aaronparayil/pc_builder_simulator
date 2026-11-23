@@ -50,15 +50,16 @@ export function createVRUI(panel, hooks) {
         ['Left stick', 'Walk'],
         ['Right stick', 'Snap turn left or right'],
         ['Trigger', 'Select, or teleport to where you point on the floor'],
-        ['Grip', 'Open or close the build menu'],
+        ['Grip', 'Grab a part (reach out, or point and squeeze)'],
+        ['A B X Y', 'Open or close the build menu'],
       ];
       rows.forEach(([k, v], i) => {
-        const y = 190 + i * 92;
+        const y = 170 + i * 86;
         p.rect(40, y, 1120, 76, C.raise);
         p.text(k, 70, y + 48, { size: 30, weight: 700, color: C.accent });
         p.text(v, 340, y + 48, { size: 28 });
       });
-      p.para('Point at a display case, a poster or the compare kiosk and pull the trigger. Walk to the glowing workbench to build your PC.', 40, 600, 1120, { size: 26 });
+      p.para('Grab parts from the display cases and the parts table next to the workbench, then fit them into the open case: the slot glows green when you can let go. Pull the trigger on posters or the kiosk to read and compare.', 40, 640, 1120, { size: 25 });
       p.button('open:build', 40, 760, 360, 90, 'Open build menu', { variant: 'primary', size: 30 });
       p.button('close', 420, 760, 220, 90, 'Got it', { size: 30 });
     },

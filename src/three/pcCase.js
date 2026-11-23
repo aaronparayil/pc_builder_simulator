@@ -140,6 +140,9 @@ export function buildCase() {
   ghost.add(ghostEdges);
   ghost.visible = false;
   ghost.userData.noPick = true;
+  // indicators never block pointing (VR lasers, walk-mode crosshair)
+  ghost.raycast = () => {};
+  ghostEdges.raycast = () => {};
   group.add(ghost);
 
   let powered = false;
@@ -154,6 +157,12 @@ export function buildCase() {
     glass.visible = v < 0.999;
   }
   setGlassOpen(1);
+
+  /** Tint the slot indicator: teal = goes here, green = release to install, red = blocked. */
+  function setGhostColor(hex) {
+    ghostMat.color.setHex(hex);
+    ghostEdges.material.color.setHex(hex);
+  }
 
   function showGhost(slot) {
     if (!slot) { ghost.visible = false; return; }
@@ -184,6 +193,7 @@ export function buildCase() {
     fans,
     update,
     showGhost,
+    setGhostColor,
     setPowered(v) { powered = v; },
     get glassOpen() { return glassOpen; },
     setGlassOpen,

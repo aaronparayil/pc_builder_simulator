@@ -171,6 +171,7 @@ export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWa
     for (const category of categories) {
       const obj = installed.get(category);
       const helper = new THREE.Box3Helper(new THREE.Box3(), color);
+      helper.raycast = () => {};
       if (obj) helper.box.setFromObject(obj).expandByScalar(0.004);
       else {
         const b = slotBox(category);
@@ -195,6 +196,7 @@ export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWa
   const pointer = new THREE.Vector2();
   const hoverHelper = new THREE.Box3Helper(new THREE.Box3(), 0x5eead4);
   hoverHelper.visible = false;
+  hoverHelper.raycast = () => {};
   scene.add(hoverHelper);
   let hovered = null;
 

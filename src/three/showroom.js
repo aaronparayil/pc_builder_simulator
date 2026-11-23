@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ROOM } from './room.js';
-import { createDisplayObject } from './parts.js';
+import { createDisplayObject, createTableObject } from './parts.js';
 import { PARTS, CATEGORIES } from '../data/catalog.js';
 
 const SANS = '"Space Grotesk", system-ui, sans-serif';
@@ -532,6 +532,47 @@ export function buildShowroom(scene) {
   const beam = new THREE.PointLight(0x5eead4, 0, 2.2, 2);
   beam.position.set(0, 1.4, 0.9);
   root.add(beam);
+
+  // Parts table to the right of the workbench: every motherboard, cooler and PSU at
+  // real size, ready to be picked up (the display cases cover the other parts).
+  const table = new THREE.Group();
+  const T = { x: 2.05, z: -0.6, w: 2.0, d: 0.66, h: 0.78 };
+  const top = new THREE.Mesh(new THREE.BoxGeometry(T.w, 0.04, T.d), new THREE.MeshStandardMaterial({ color: 0x23262d, metalness: 0.4, roughness: 0.6 }));
+  top.position.y = T.h - 0.02;
+  top.castShadow = top.receiveShadow = true;
+  table.add(top);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(T.w, 0.006, 0.006), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.4), toneMapped: false }));
+  edge.position.set(0, T.h - 0.03, T.d / 2);
+  table.add(edge);
+  for (const x of [-T.w / 2 + 0.05, T.w / 2 - 0.05]) for (const z of [-T.d / 2 + 0.05, T.d / 2 - 0.05]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, T.h - 0.04, 0.04), frameMat);
+    leg.position.set(x, (T.h - 0.04) / 2, z);
+    table.add(leg);
+  }
+  const tableSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.12), new THREE.MeshBasicMaterial({
+    toneMapped: false,
+    map: canvasTexture(900, 120, (ctx, w, h) => {
+      ctx.fillStyle = '#0d0f15'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = TEAL; ctx.font = `700 54px ${SANS}`; ctx.fillText('PARTS TABLE', 24, 76);
+      ctx.fillStyle = '#8b95a7'; ctx.font = `500 30px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText('grab · carry · install', w - 24, 74);
+    }),
+  }));
+  tableSign.position.set(0, T.h - 0.05, T.d / 2 + 0.004);
+  table.add(tableSign);
+  const place = (part, x, z) => {
+    const obj = createTableObject(part);
+    obj.position.set(x, T.h, z);
+    obj.userData.grab = { partId: part.id, category: part.category };
+    obj.userData.interact = { kind: 'part', partId: part.id, category: part.category, label: `Inspect ${part.name}` };
+    table.add(obj);
+    rgb.push(...(obj.userData.rgb || []));
+  };
+  PARTS.motherboard.forEach((part, i) => place(part, -T.w / 2 + 0.22 + i * 0.335, 0.14));
+  PARTS.cooler.forEach((part, i) => place(part, -T.w / 2 + 0.16 + i * 0.22, -0.17));
+  PARTS.psu.forEach((part, i) => place(part, 0.1 + i * 0.235, -0.17));
+  table.position.set(T.x, 0, T.z);
+  root.add(table);
+  colliders.push({ minX: T.x - T.w / 2, maxX: T.x + T.w / 2, minZ: T.z - T.d / 2, maxZ: T.z + T.d / 2 });
 
   // Comparison kiosk in the middle of the room, facing the bench
   const kiosk = buildKiosk();

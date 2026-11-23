@@ -4,12 +4,19 @@ import { ROOM } from './room.js';
 import { makeBlocker } from './walk.js';
 import { createPanel } from './vrPanel.js';
 import { createVRUI } from '../ui/vrViews.js';
+import { createHeldPart } from './parts.js';
+import { getPart } from '../data/catalog.js';
+import { REQUIRES } from '../logic/analyze.js';
 
 const MOVE_SPEED = 2;
 const SNAP = Math.PI / 6; // 30°
 const REACH = 8;
 const ENTRANCE = new THREE.Vector3(2.4, 0, 7.4);
 const BENCH_SPOT = new THREE.Vector3(0.1, 0, 1.15);
+const GRAB_REACH = 5; // metres: point at a part and squeeze to pull it to your hand
+const TOUCH = 0.07; // metres from the controller to a part's box to grab it directly
+const SNAP_DIST = 0.14; // how close a held part must be to its slot to install
+const TEAL = 0x5eead4, GREEN = 0x4ade80, RED = 0xff4d6d;
 
 /**
  * Room-scale VR on top of the same scene: controllers with laser pointers, thumbstick
@@ -49,11 +56,12 @@ export function createVR(workshop, hooks) {
     ring.visible = dot.visible = false;
     ring.raycast = dot.raycast = () => {};
     scene.add(ring, dot);
-    const p = { ctrl, grip, line, lineMat, ring, dot, source: null, hit: null, scan: 0, lastScan: null, turnReady: true };
+    const p = { ctrl, grip, line, lineMat, ring, dot, source: null, hit: null, scan: 0, lastScan: null, turnReady: true, held: null, menuDown: false };
     ctrl.addEventListener('connected', (e) => { p.source = e.data; line.visible = e.data.targetRayMode !== 'gaze'; });
-    ctrl.addEventListener('disconnected', () => { p.source = null; });
-    ctrl.addEventListener('selectstart', () => select(p));
-    ctrl.addEventListener('squeezestart', () => toggleMenu());
+    ctrl.addEventListener('disconnected', () => { if (p.held) release(p); p.source = null; });
+    ctrl.addEventListener('selectstart', () => { if (!p.held) select(p); });
+    ctrl.addEventListener('squeezestart', () => tryGrab(p));
+    ctrl.addEventListener('squeezeend', () => { if (p.held) release(p); });
     return p;
   });
 
@@ -120,7 +128,7 @@ export function createVR(workshop, hooks) {
     return null;
   }
 
-  const sceneTargets = () => scene.children.filter((c) => c !== rig && c !== panel.group && !c.isLight && c.visible);
+  const sceneTargets = () => scene.children.filter((c) => c !== rig && c !== panel.group && c !== label && !c.isLight && c.visible && !c.userData.held);
 
   function interact(target) {
     hooks.click?.();
@@ -145,6 +153,7 @@ export function createVR(workshop, hooks) {
   engine.onUpdate((dt) => {
     if (!active) return;
     let hover = null;
+    labelOwner = null;
     for (const p of pointers) {
       p.ring.visible = p.dot.visible = false;
       if (!p.source || p.source.targetRayMode === 'screen') { p.hit = null; continue; }
@@ -171,7 +180,7 @@ export function createVR(workshop, hooks) {
         if (p.scan <= 0) {
           p.scan = 0.08;
           const h = raycaster.intersectObjects(sceneTargets(), true).find((x) => x.object.visible);
-          p.lastScan = h ? { target: findInteract(h.object), point: h.point.clone(), distance: h.distance } : null;
+          p.lastScan = h ? { target: findInteract(h.object), grab: refineCaseGrab(findGrab(h.object), raycaster.ray, h.distance), point: h.point.clone(), distance: h.distance } : null;
         }
         if (p.lastScan?.target) {
           p.hit = { type: 'interact', target: p.lastScan.target };
@@ -196,8 +205,15 @@ export function createVR(workshop, hooks) {
       p.line.scale.z = dist;
       p.lineMat.color.set(p.hit?.type === 'panel' || p.hit?.type === 'interact' ? 0xffffff : 0x5eead4);
 
-      // thumbsticks: left walks, right snap-turns
+      // face buttons (A/B/X/Y) toggle the build menu
       const gp = p.source.gamepad;
+      const menuNow = Boolean(gp?.buttons?.[4]?.pressed || gp?.buttons?.[5]?.pressed);
+      if (menuNow && !p.menuDown) toggleMenu();
+      p.menuDown = menuNow;
+      if (p.held) updateHeld(p);
+      else if (!labelOwner && p.lastScan?.grab && p.hit?.type === 'interact') { showLabel(p.lastScan.grab, p.lastScan.point); labelOwner = p; }
+
+      // thumbsticks: left walks, right snap-turns
       if (gp) {
         const ax = gp.axes.length >= 4 ? gp.axes[2] : gp.axes[0] || 0;
         const ay = gp.axes.length >= 4 ? gp.axes[3] : gp.axes[1] || 0;
@@ -215,7 +231,252 @@ export function createVR(workshop, hooks) {
       }
     }
     panel.setHover(hover);
+    if (!labelOwner && !noticeUntil) label.visible = false;
+    if (noticeUntil && performance.now() > noticeUntil) { noticeUntil = 0; label.visible = false; }
   });
+
+  // --- grabbing parts -------------------------------------------------------------------
+  const pc = workshop.pc;
+  const caseQuat = new THREE.Quaternion();
+  const tmpBox = new THREE.Box3();
+  const gripPos = new THREE.Vector3();
+
+  /** What, if anything, can be picked up from this object (walks up the hierarchy). */
+  function findGrab(obj) {
+    for (let o = obj; o; o = o.parent) {
+      if (o.userData.grab) return { source: 'table', partId: o.userData.grab.partId, object: o };
+      if (o.userData.interact?.kind === 'part') return { source: 'display', partId: o.userData.interact.partId, object: o };
+      if (o.parent === pc.group && o.userData.partId && o.userData.partId !== 'stock') return { source: 'case', partId: o.userData.partId, object: o };
+      if (o === pc.group || o === scene) return null;
+    }
+    return null;
+  }
+
+  let touchables = null;
+  function touchCandidates() {
+    if (!touchables) {
+      touchables = [];
+      workshop.showroom?.root.traverse((o) => {
+        if (o.userData.grab || (o.userData.interact?.kind === 'part' && !o.isMesh)) {
+          touchables.push({ box: new THREE.Box3().setFromObject(o), grab: findGrab(o) });
+        }
+      });
+    }
+    // The case is turned on the desk, so world-axis boxes around its parts would be
+    // inflated and overlap; measure installed parts in the case's own frame instead.
+    pc.group.updateMatrixWorld(true);
+    caseInv.copy(pc.group.matrixWorld).invert();
+    const installed = [...workshop.installed.values()]
+      .filter((o) => o.userData.partId !== 'stock')
+      .map((o) => ({ box: caseLocalBox(o), grab: findGrab(o), local: true }));
+    return [...installed, ...touchables];
+  }
+
+  /**
+   * Thin parts are easy to miss with a laser (aim at a RAM kit and the ray slips
+   * between the sticks onto the board). If the ray passes through a smaller
+   * installed part's box before reaching what it hit, grab that part instead.
+   */
+  function refineCaseGrab(grab, ray, hitDistance) {
+    if (!grab || grab.source !== 'case' || grab.object.userData.category !== 'motherboard') return grab;
+    pc.group.updateMatrixWorld(true);
+    caseInv.copy(pc.group.matrixWorld).invert();
+    const local = ray.clone().applyMatrix4(caseInv);
+    const hitPoint = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    let best = grab, bestVol = Infinity;
+    for (const o of workshop.installed.values()) {
+      if (o.userData.partId === 'stock') continue;
+      const box = caseLocalBox(o);
+      if (!local.intersectBox(box, hitPoint)) continue;
+      if (hitPoint.distanceTo(local.origin) > hitDistance + 0.01) continue;
+      box.getSize(size);
+      const vol = size.x * size.y * size.z;
+      if (vol < bestVol) { bestVol = vol; best = findGrab(o); }
+    }
+    return best;
+  }
+
+  const caseInv = new THREE.Matrix4();
+  const meshToCase = new THREE.Matrix4();
+  function caseLocalBox(obj) {
+    const box = new THREE.Box3();
+    obj.updateMatrixWorld(true);
+    obj.traverse((n) => {
+      if (!n.isMesh || !n.geometry) return;
+      if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
+      meshToCase.multiplyMatrices(caseInv, n.matrixWorld);
+      box.union(n.geometry.boundingBox.clone().applyMatrix4(meshToCase));
+    });
+    return box;
+  }
+
+  function haptic(p, intensity = 0.5, ms = 40) {
+    p.source?.gamepad?.hapticActuators?.[0]?.pulse?.(intensity, ms);
+  }
+
+  function tryGrab(p) {
+    if (!active || p.held) return;
+    // 1) something within reach of the hand
+    p.grip.getWorldPosition(gripPos);
+    // Prefer a part the hand is inside; parts nest (the CPU sits inside the board's
+    // box), so among those take the smallest. Otherwise take the nearest in reach.
+    let best = null, bestKey = [Infinity, Infinity];
+    const size = new THREE.Vector3();
+    const candidates = touchCandidates();
+    const gripInCase = pc.group.worldToLocal(gripPos.clone());
+    for (const c of candidates) {
+      const d = c.box.distanceToPoint(c.local ? gripInCase : gripPos);
+      if (!c.grab || d > TOUCH) continue;
+      c.box.getSize(size);
+      const key = [d, size.x * size.y * size.z];
+      if (key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) { best = c.grab; bestKey = key; }
+    }
+    // 2) otherwise whatever the laser points at
+    const pulled = !best;
+    if (!best && p.lastScan?.grab && p.lastScan.distance < GRAB_REACH) best = p.lastScan.grab;
+    if (!best) return;
+    grab(p, best, pulled);
+  }
+
+  async function grab(p, target, pulled) {
+    const part = getPart(target.partId);
+    if (!part) return;
+    const start = new THREE.Vector3();
+    if (target.source === 'case') {
+      if (hooks.isBusy()) return;
+      tmpBox.setFromObject(target.object).getCenter(start);
+      await hooks.remove(part.category, { animate: false });
+    } else {
+      tmpBox.setFromObject(target.object).getCenter(start);
+    }
+    const { holder, target: slotCenter } = createHeldPart(part);
+    holder.userData.held = true;
+    holder.traverse((o) => { o.raycast = () => {}; });
+    pc.group.getWorldQuaternion(caseQuat);
+    holder.position.copy(start);
+    holder.quaternion.copy(caseQuat);
+    scene.add(holder);
+    p.grip.attach(holder);
+    if (pulled) {
+      // fly into the hand, just in front of the controller
+      const from = holder.position.clone();
+      const to = new THREE.Vector3(0, -0.02, -0.1);
+      engine.tween({ duration: 0.25, onUpdate: (k) => { if (p.held?.holder === holder) holder.position.lerpVectors(from, to, k); } });
+    }
+    p.held = { holder, part, slotCenter, source: target.source, from: start, ready: false };
+    label.visible = false;
+    haptic(p, 0.6, 50);
+    hooks.click?.();
+  }
+
+  function canInstall(part) {
+    const build = hooks.getBuild();
+    return REQUIRES[part.category].every((r) => build[r]) && !hooks.isBusy();
+  }
+
+  function updateHeld(p) {
+    const { holder, part, slotCenter } = p.held;
+    const targetWorld = pc.group.localToWorld(slotCenter.clone());
+    const d = holder.getWorldPosition(new THREE.Vector3()).distanceTo(targetWorld);
+    const ok = canInstall(part);
+    const ready = ok && d < SNAP_DIST;
+    if (ready && !p.held.ready) haptic(p, 0.3, 25);
+    p.held.ready = ready;
+    pc.showGhost({ center: slotCenter, size: holder.userData.size.clone().addScalar(0.01) });
+    pc.setGhostColor(!ok ? RED : ready ? GREEN : TEAL);
+  }
+
+  function finishHeld() {
+    pc.showGhost(null);
+    pc.setGhostColor(TEAL);
+    hooks.refreshSlot?.();
+  }
+
+  function release(p) {
+    const held = p.held;
+    p.held = null;
+    const { holder, part } = held;
+    scene.attach(holder);
+    if (held.ready) {
+      // glide into the slot, then hand over to the normal install
+      const p0 = holder.position.clone(), q0 = holder.quaternion.clone();
+      const p1 = pc.group.localToWorld(held.slotCenter.clone());
+      pc.group.getWorldQuaternion(caseQuat);
+      const q1 = caseQuat.clone();
+      engine.tween({ duration: 0.22, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.quaternion.slerpQuaternions(q0, q1, k); } })
+        .then(async () => {
+          const ok = await hooks.install(part.id, { animate: false });
+          scene.remove(holder);
+          if (ok) { haptic(p, 0.8, 60); hooks.installSound?.(); }
+        });
+    } else {
+      const near = holder.position.distanceTo(pc.group.localToWorld(held.slotCenter.clone())) < SNAP_DIST * 2;
+      if (near && !canInstall(part)) {
+        const need = REQUIRES[part.category].filter((r) => !hooks.getBuild()[r]);
+        notice(need.length ? `Install the ${need.map((r) => r === 'cpu' ? 'CPU' : r).join(' and ')} first` : 'Shut the PC down first', holder.position);
+        hooks.errorSound?.();
+        haptic(p, 0.9, 120);
+      }
+      // put it back: shrink away where it came from
+      const p0 = holder.position.clone();
+      const p1 = held.source === 'case' ? p0.clone() : held.from;
+      engine.tween({ duration: 0.35, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.scale.setScalar(Math.max(0.01, 1 - k)); } })
+        .then(() => scene.remove(holder));
+    }
+    finishHeld();
+  }
+
+  // Floating name tag for whatever the laser is on, and short notices
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 768; labelCanvas.height = 160;
+  const labelTex = new THREE.CanvasTexture(labelCanvas);
+  labelTex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.08), new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, toneMapped: false, depthTest: false }));
+  label.renderOrder = 20;
+  label.visible = false;
+  label.raycast = () => {};
+  scene.add(label);
+  let labelOwner = null;
+  let labelKey = '';
+  let noticeUntil = 0;
+
+  function drawLabel(title, sub, color = '#5eead4') {
+    const key = title + sub + color;
+    if (key === labelKey) return;
+    labelKey = key;
+    const ctx = labelCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 768, 160);
+    ctx.fillStyle = 'rgba(13,15,21,0.92)';
+    ctx.beginPath(); ctx.roundRect(0, 0, 768, 160, 28); ctx.fill();
+    ctx.fillStyle = color; ctx.fillRect(0, 24, 8, 112);
+    ctx.fillStyle = '#e6edf3'; ctx.font = '700 52px "Space Grotesk", sans-serif';
+    ctx.fillText(title, 32, 70, 704);
+    ctx.fillStyle = '#8b95a7'; ctx.font = '500 34px "JetBrains Mono", monospace';
+    ctx.fillText(sub, 32, 124, 704);
+    labelTex.needsUpdate = true;
+  }
+
+  function placeLabel(point) {
+    headPose();
+    label.position.set(point.x, point.y + 0.12, point.z).lerp(head, 0.15);
+    label.lookAt(head);
+    label.visible = true;
+  }
+
+  function showLabel(grab, point) {
+    if (noticeUntil) return;
+    const part = getPart(grab.partId);
+    if (!part) return;
+    drawLabel(part.name, `$${part.price} · ${grab.source === 'case' ? 'grip to take out' : 'grip to grab'}`);
+    placeLabel(point);
+  }
+
+  function notice(text, point) {
+    drawLabel(text, 'then try again', '#ff4d6d');
+    placeLabel(point);
+    noticeUntil = performance.now() + 2200;
+  }
 
   // --- session lifecycle --------------------------------------------------------------
   renderer.xr.addEventListener('sessionstart', () => {
@@ -234,6 +495,9 @@ export function createVR(workshop, hooks) {
   });
 
   renderer.xr.addEventListener('sessionend', () => {
+    for (const p of pointers) if (p.held) { scene.remove(p.held.holder); p.held = null; }
+    finishHeld();
+    label.visible = false;
     active = false;
     panel.hide();
     for (const p of pointers) p.ring.visible = p.dot.visible = false;
@@ -263,6 +527,6 @@ export function createVR(workshop, hooks) {
     refresh: () => ui.refresh(),
     showResult: (a) => { ui.showResult(a); placePanel(); },
     // exposed for automated checks without a headset
-    _test: { ui, panel, interact, teleport, turn, placePanel, setActive(v) { active = v; }, pointers },
+    _test: { ui, panel, interact, teleport, turn, placePanel, setActive(v) { active = v; }, pointers, tryGrab, release, label },
   };
 }
