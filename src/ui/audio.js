@@ -1,9 +1,11 @@
 // Tiny Web Audio synth: every sound is generated, nothing is downloaded.
+import { createMusic } from './music.js';
 
 let ctx = null;
 let master = null;
 let muted = false;
 let hum = null;
+let music = null;
 
 try { muted = localStorage.getItem('rig.muted') === '1'; } catch { /* storage unavailable */ }
 
@@ -15,6 +17,7 @@ function ensure() {
     master = ctx.createGain();
     master.gain.value = muted ? 0 : 0.5;
     master.connect(ctx.destination);
+    music = createMusic(ctx, master);
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
@@ -65,7 +68,11 @@ function whoosh({ dur = 0.35, from = 400, to = 2400, vol = 0.12 } = {}) {
 }
 
 export const sfx = {
-  unlock: () => ensure(),
+  /** Called on the first click: wakes the audio context and starts the music. */
+  unlock: () => {
+    if (!ensure()) return;
+    if (!muted) music.start();
+  },
   click: () => tone({ freq: 1800, to: 1200, type: 'triangle', dur: 0.05, vol: 0.06 }),
   hover: () => tone({ freq: 2400, type: 'sine', dur: 0.03, vol: 0.02 }),
   install: () => {
@@ -114,4 +121,6 @@ export function setMuted(v) {
   muted = v;
   try { localStorage.setItem('rig.muted', v ? '1' : '0'); } catch { /* ignore */ }
   if (master) master.gain.value = v ? 0 : 0.5;
+  // stop scheduling notes nobody hears; start again (fading in) when unmuted
+  if (music) { if (v) music.stop(0.1); else music.start(); }
 }

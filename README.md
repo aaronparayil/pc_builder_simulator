@@ -35,7 +35,7 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 | Scene | The showroom, case and almost every part are built in code. Each product has its own model made to its real dimensions: graphics cards with their true length, slot thickness and fan count; AMD AM4, AM5 and Intel LGA1700 CPU packages with printed lids; ATX motherboards themed per chipset with the right socket. Posters and textures are drawn on canvases at runtime |
 | Models | The one scanned asset, an M.2 SSD, is a glTF model compressed with [glTF Transform](https://gltf-transform.dev) (meshopt geometry + WebP textures) to 160 KB |
 | Game logic | `src/logic/analyze.js` is a pure, framework-free rules engine: compatibility checks, power draw, and a small performance model (min of CPU-bound and GPU-bound frame rate, with memory and thermal modifiers) |
-| Sound | Every sound effect is synthesised with the Web Audio API, so there are no audio files |
+| Sound | Every sound effect and the ambient background music are synthesised with the Web Audio API, so there are no audio files |
 | UI | Vanilla JS and CSS, native `<dialog>` modals, keyboard shortcuts, a responsive bottom-sheet layout on phones |
 | Quality | `node --test` unit tests, including a brute-force search over the whole catalog proving every challenge can be completed with three stars |
 | Delivery | Vite build deployed to GitHub Pages by GitHub Actions on every push to `main` |
@@ -96,7 +96,7 @@ src/
   three/workshop.js      Installs/removes parts, picking, power effects
   three/textures.js      Canvas-generated textures and posters
   ui/compare.js          CPU/GPU comparison charts and table
-  ui/                    Monitor screens, sound synth, icons
+  ui/                    Monitor screens, sound synth and music, icons
 public/models/           Compressed glTF models
 test/                    Unit tests
 tools/                   Blender script used to prototype a motherboard model
