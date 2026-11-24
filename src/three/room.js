@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { floorTexture, pegboardTexture, woodTexture, deskMatTexture, posterTexture } from './textures.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { plankFloorTexture, pegboardTexture, woodTexture, deskMatTexture, posterTexture, slatWallTexture, washTexture, neonTexture } from './textures.js';
+import { bakeStatic } from './bake.js';
 
 export const DESK_TOP = 0.75;
 
@@ -42,17 +44,30 @@ export function buildRoom(scene) {
   const W = maxX - minX, D = maxZ - minZ, cz = (minZ + maxZ) / 2;
 
   // Floor, walls and ceiling
+  const planks = plankFloorTexture();
+  planks.repeat.set((W + 0.2) / 1.6, (D + 0.2) / 1.6);
   const floor = mesh(new THREE.PlaneGeometry(W + 0.2, D + 0.2),
-    new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.55, metalness: 0.1 }), { cast: false });
+    new THREE.MeshStandardMaterial({ map: planks, roughness: 0.5, metalness: 0.05 }), { cast: false });
   floor.rotation.x = -Math.PI / 2;
   floor.position.z = cz;
   root.add(floor);
 
-  const peg = pegboardTexture();
-  peg.repeat.set(W * 1.35, 3);
-  const backWall = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: peg, roughness: 0.85 }), { cast: false });
+  const slats = slatWallTexture();
+  slats.repeat.set(W / 0.72, 1);
+  const backWall = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: slats, roughness: 0.75 }), { cast: false });
   backWall.position.set(0, H / 2, minZ);
   root.add(backWall);
+  // pegboard panel behind the workbench, in a slim frame
+  const peg = pegboardTexture();
+  peg.repeat.set(2.7 * 1.35, 1.45 * 1.35);
+  const pegPanel = mesh(new THREE.PlaneGeometry(2.7, 1.45), new THREE.MeshStandardMaterial({ map: peg, roughness: 0.85 }), { cast: false });
+  pegPanel.position.set(0, 1.58, minZ + 0.012);
+  root.add(pegPanel);
+  for (const [w, h, x, y] of [[2.76, 0.03, 0, 1.58 + 0.74], [2.76, 0.03, 0, 1.58 - 0.74], [0.03, 1.5, -1.38, 1.58], [0.03, 1.5, 1.38, 1.58]]) {
+    const bar = mesh(new THREE.BoxGeometry(w, h, 0.02), metal, { cast: false });
+    bar.position.set(x, y, minZ + 0.012);
+    root.add(bar);
+  }
   const panels = panelTexture();
   panels.repeat.set(D / 1.2, 1);
   const sideMat = new THREE.MeshStandardMaterial({ map: panels, roughness: 0.9 });
@@ -67,17 +82,39 @@ export function buildRoom(scene) {
   const frontWall = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: frontPanels, roughness: 0.9 }), { cast: false });
   frontWall.rotation.y = Math.PI;
   frontWall.position.set(0, H / 2, maxZ);
-  const ceiling = mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x0b0c10, roughness: 1 }), { cast: false });
+  const ceiling = mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x121419, roughness: 1 }), { cast: false });
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, H, cz);
   root.add(leftWall, rightWall, frontWall, ceiling);
 
-  // Ceiling light strips and skirting glow
-  const stripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdde7ff).multiplyScalar(1.4), toneMapped: false });
-  for (const x of [-3, 0, 3]) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, D - 1.2), stripMat);
-    strip.position.set(x, H - 0.01, cz);
-    root.add(strip);
+  // Decor that never moves is built into one group and merged into a few meshes
+  const decor = new THREE.Group();
+  root.add(decor);
+  const add = (geo, mat, x, y, z, { cast = false, ry = 0, rx = 0, rz = 0, noRay = false } = {}) => {
+    const m = mesh(geo, mat, { cast });
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    if (noRay) m.raycast = () => {};
+    decor.add(m);
+    return m;
+  };
+
+  // Ceiling: a recessed panel ringed by a soft LED line
+  const stripMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xe9eeff).multiplyScalar(1.15), toneMapped: false });
+  const inset = 1.1, rx0 = minX + inset, rx1 = maxX - inset, rz0 = minZ + inset + 0.6, rz1 = maxZ - inset;
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0c0d11, roughness: 1 });
+  add(new THREE.BoxGeometry(rx1 - rx0, 0.06, rz1 - rz0), ceilMat, (rx0 + rx1) / 2, H - 0.03, (rz0 + rz1) / 2, { noRay: true });
+  for (const [w, d, x, z] of [[rx1 - rx0, 0.025, (rx0 + rx1) / 2, rz0], [rx1 - rx0, 0.025, (rx0 + rx1) / 2, rz1], [0.025, rz1 - rz0, rx0, (rz0 + rz1) / 2], [0.025, rz1 - rz0, rx1, (rz0 + rz1) / 2]]) {
+    add(new THREE.BoxGeometry(w, 0.012, d), stripMat, x, H - 0.062, z, { noRay: true });
+  }
+
+  // Warm light washing down from a cove along the top of every wall
+  const washMat = new THREE.MeshBasicMaterial({ map: washTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const coveMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe2c4).multiplyScalar(1.3), toneMapped: false });
+  for (const [len, x, z, ry] of [[W, 0, minZ + 0.02, 0], [W, 0, maxZ - 0.02, Math.PI], [D, minX + 0.02, cz, Math.PI / 2], [D, maxX - 0.02, cz, -Math.PI / 2]]) {
+    add(new THREE.PlaneGeometry(len, 1.1), washMat, x, H - 0.55, z, { ry, noRay: true });
+    const dx = Math.sin(ry) * 0.04, dz = Math.cos(ry) * 0.04;
+    add(new THREE.BoxGeometry(len, 0.012, 0.012), coveMat, x + dx, H - 0.05, z + dz, { ry, noRay: true });
   }
   const skirtMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.3), toneMapped: false });
   for (const [x, z, len, rot] of [[minX + 0.01, cz, D, Math.PI / 2], [maxX - 0.01, cz, D, Math.PI / 2], [0, maxZ - 0.01, W, 0]]) {
@@ -95,8 +132,65 @@ export function buildRoom(scene) {
   neon.position.set(0, 2.05, minZ + 0.02);
   root.add(neon);
 
+  // Neon logo on the back wall, right of the workbench
+  const logoMat = new THREE.MeshBasicMaterial({ map: neonTexture('RIG//BUILDER'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  add(new THREE.PlaneGeometry(2.3, 0.43), logoMat, 3.3, 2.6, minZ + 0.03, { noRay: true });
+  // redraw once the display font has loaded
+  document.fonts?.ready.then(() => {
+    logoMat.map.dispose();
+    logoMat.map = neonTexture('RIG//BUILDER');
+    logoMat.needsUpdate = true;
+  });
+
+  // Pendant lamps over the workbench
+  const shadeMat = new THREE.MeshStandardMaterial({ color: 0x15171c, metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide });
+  const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd9a8).multiplyScalar(1.6), toneMapped: false });
+  const cordMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0c });
+  for (const x of [-0.8, 0.8]) {
+    const y = 2.2;
+    add(new THREE.CylinderGeometry(0.004, 0.004, H - y - 0.1, 6), cordMat, x, (H + y) / 2 + 0.05, 0.05, { noRay: true });
+    add(new THREE.CylinderGeometry(0.035, 0.13, 0.17, 24, 1, true), shadeMat, x, y, 0.05, { noRay: true });
+    add(new THREE.CircleGeometry(0.11, 24), bulbMat, x, y - 0.07, 0.05, { rx: Math.PI / 2, noRay: true });
+  }
+
+  // A halo ring hanging over the middle of the showroom
+  const haloMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9ff5e8).multiplyScalar(1.5), toneMapped: false });
+  add(new THREE.TorusGeometry(1.15, 0.022, 8, 96), haloMat, 0, 2.72, 5.3, { rx: Math.PI / 2, noRay: true });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    add(new THREE.CylinderGeometry(0.003, 0.003, H - 2.72, 4), cordMat, Math.cos(a) * 1.15, (H + 2.72) / 2, 5.3 + Math.sin(a) * 1.15, { noRay: true });
+  }
+
+  // Lounge corner, back right: sofa, coffee table, floor lamp
+  const fabric = new THREE.MeshStandardMaterial({ color: 0x2b3140, roughness: 0.95 });
+  const fabricDark = new THREE.MeshStandardMaterial({ color: 0x232835, roughness: 0.95 });
+  const oak = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.5 });
+  const SX = 3.35, SZ = minZ + 0.5;
+  add(new RoundedBoxGeometry(2.1, 0.24, 0.86, 3, 0.04), fabricDark, SX, 0.2, SZ, { cast: true });
+  add(new RoundedBoxGeometry(2.1, 0.5, 0.2, 3, 0.06), fabric, SX, 0.55, SZ - 0.33, { cast: true });
+  for (const dx of [-0.5, 0.5]) add(new RoundedBoxGeometry(0.98, 0.14, 0.64, 3, 0.05), fabric, SX + dx, 0.38, SZ + 0.08, { cast: true });
+  for (const dx of [-1.0, 1.0]) add(new RoundedBoxGeometry(0.16, 0.46, 0.86, 3, 0.05), fabric, SX + dx, 0.31, SZ, { cast: true });
+  for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) add(new THREE.CylinderGeometry(0.018, 0.014, 0.08, 8), metal, SX + dx, 0.04, SZ + dz);
+  // throw cushions in the accent colours
+  add(new RoundedBoxGeometry(0.36, 0.34, 0.12, 3, 0.05), new THREE.MeshStandardMaterial({ color: 0x1f6f66, roughness: 0.9 }), SX - 0.7, 0.6, SZ - 0.18, { rx: -0.25, ry: 0.2 });
+  add(new RoundedBoxGeometry(0.34, 0.32, 0.12, 3, 0.05), new THREE.MeshStandardMaterial({ color: 0x7a2547, roughness: 0.9 }), SX + 0.72, 0.6, SZ - 0.18, { rx: -0.25, ry: -0.25 });
+  const TX = SX, TZ = SZ + 0.95;
+  add(new THREE.CylinderGeometry(0.42, 0.42, 0.035, 40), oak, TX, 0.42, TZ, { cast: true });
+  add(new THREE.CylinderGeometry(0.05, 0.08, 0.4, 16), metal, TX, 0.2, TZ);
+  add(new THREE.CylinderGeometry(0.2, 0.22, 0.02, 24), metal, TX, 0.01, TZ);
+  // floor lamp with a glowing shade
+  const LX = SX + 1.45, LZ = minZ + 0.35;
+  add(new THREE.CylinderGeometry(0.14, 0.15, 0.02, 24), metal, LX, 0.01, LZ);
+  add(new THREE.CylinderGeometry(0.012, 0.012, 1.5, 8), metal, LX, 0.76, LZ);
+  add(new THREE.CylinderGeometry(0.15, 0.2, 0.28, 24, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffcf99).multiplyScalar(1.1), toneMapped: false, side: THREE.DoubleSide }), LX, 1.55, LZ);
+  // a big plant beside the sofa
+  const plant = buildPlant(SX - 1.45, 0, minZ + 0.35);
+  plant.scale.setScalar(3.2);
+  decor.add(plant);
+  bakeStatic(decor);
+
   // Art posters on the back wall
-  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2], [-4.65, 1.65, 1], [3.3, 1.7, 0]].forEach(([x, y, i]) => {
+  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2], [-4.65, 1.65, 1], [5.0, 1.7, 0]].forEach(([x, y, i]) => {
     const p = mesh(new THREE.PlaneGeometry(0.48, 0.64), new THREE.MeshStandardMaterial({ map: posterTexture(i), roughness: 0.6 }), { cast: false });
     p.position.set(x, y, minZ + 0.01);
     root.add(p);
@@ -183,9 +277,17 @@ export function buildRoom(scene) {
   // Things the walker bumps into, as world-space XZ boxes
   const colliders = [
     { minX: -0.95, maxX: 0.95, minZ: -0.95, maxZ: 0.46 }, // desk
+    { minX: SX - 1.1, maxX: SX + 1.1, minZ: minZ, maxZ: SZ + 0.45 }, // sofa
+    { minX: TX - 0.45, maxX: TX + 0.45, minZ: TZ - 0.45, maxZ: TZ + 0.45 }, // coffee table
+  ];
+  // Boxes that thrown parts land on
+  const solids = [
+    new THREE.Box3(new THREE.Vector3(SX - 1.08, 0, minZ), new THREE.Vector3(SX + 1.08, 0.45, SZ + 0.43)),
+    new THREE.Box3(new THREE.Vector3(SX - 1.08, 0, minZ), new THREE.Vector3(SX + 1.08, 0.8, SZ - 0.23)),
+    new THREE.Box3(new THREE.Vector3(TX - 0.42, 0, TZ - 0.42), new THREE.Vector3(TX + 0.42, 0.44, TZ + 0.42)),
   ];
 
-  return { monitor, lights: { key, fill, rimA, rimB }, colliders };
+  return { monitor, lights: { key, fill, rimA, rimB }, colliders, solids };
 }
 
 function buildPlant(x, y, z) {

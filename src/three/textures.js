@@ -31,18 +31,6 @@ function noise(ctx, w, h, amount, alpha = 0.06) {
   ctx.globalAlpha = alpha;
 }
 
-export function floorTexture() {
-  const [c, ctx] = canvas(512, 512);
-  ctx.fillStyle = '#15171c';
-  ctx.fillRect(0, 0, 512, 512);
-  noise(ctx, 512, 512, 14);
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, 512, 512);
-  return toTexture(c, { repeat: [10, 10] });
-}
-
 export function pegboardTexture() {
   const [c, ctx] = canvas(256, 256);
   ctx.fillStyle = '#1b1e25';
@@ -178,3 +166,115 @@ export function posterTexture(i) {
   return toTexture(c);
 }
 
+
+/** Dark oak planks: staggered boards with grain and soft seams. */
+export function plankFloorTexture() {
+  const [c, ctx] = canvas(1024, 1024);
+  const rows = 8, boardH = 1024 / rows;
+  const tones = ['#3b2a1e', '#33241a', '#402e21', '#2f2118', '#382819'];
+  for (let r = 0; r < rows; r++) {
+    let x = -((r * 397) % 600);
+    while (x < 1024) {
+      const len = 520 + ((r * 131 + x) % 260);
+      ctx.fillStyle = tones[(r * 7 + Math.floor(x / 97)) % tones.length];
+      ctx.fillRect(x, r * boardH, len, boardH);
+      // grain
+      for (let i = 0; i < 9; i++) {
+        const y = r * boardH + 6 + Math.random() * (boardH - 12);
+        ctx.strokeStyle = `rgba(${Math.random() > 0.5 ? '255,214,170' : '0,0,0'},${0.04 + Math.random() * 0.05})`;
+        ctx.lineWidth = 1 + Math.random() * 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        for (let xx = x; xx <= x + len; xx += 40) ctx.lineTo(xx, y + Math.sin(xx * 0.02 + i) * 2.5);
+        ctx.stroke();
+      }
+      // end seam
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x, r * boardH, 3, boardH);
+      x += len;
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, r * boardH, 1024, 3);
+    ctx.fillStyle = 'rgba(255,220,180,0.05)';
+    ctx.fillRect(0, r * boardH + 3, 1024, 2);
+  }
+  ctx.globalAlpha = 1;
+  return toTexture(c, { repeat: [4, 4] });
+}
+
+/** Acoustic slat wall: vertical walnut slats on a black felt backing. */
+export function slatWallTexture() {
+  const [c, ctx] = canvas(512, 512);
+  ctx.fillStyle = '#07080a';
+  ctx.fillRect(0, 0, 512, 512);
+  const slats = 8, pitch = 512 / slats, w = pitch * 0.68;
+  for (let i = 0; i < slats; i++) {
+    const x = i * pitch + (pitch - w) / 2;
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, '#2c1d14');
+    g.addColorStop(0.5, '#4a3324');
+    g.addColorStop(1, '#2a1b12');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 0, w, 512);
+    for (let k = 0; k < 6; k++) {
+      ctx.strokeStyle = `rgba(0,0,0,${0.08 + Math.random() * 0.08})`;
+      ctx.lineWidth = 1;
+      const gx = x + 3 + Math.random() * (w - 6);
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx + (Math.random() - 0.5) * 4, 512); ctx.stroke();
+    }
+  }
+  return toTexture(c, { repeat: [1, 1] });
+}
+
+/** A vertical fade (bright at the bottom of the canvas) for additive light washes. */
+export function washTexture(rgb = '255,236,214') {
+  const [c, ctx] = canvas(8, 256);
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, `rgba(${rgb},0.55)`);
+  g.addColorStop(0.25, `rgba(${rgb},0.2)`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 8, 256);
+  return toTexture(c);
+}
+
+/** Glowing neon lettering on a transparent background. */
+export function neonTexture(text, color = '#5eead4', accent = '#ff3d7f') {
+  const [c, ctx] = canvas(2048, 384);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 230px "Space Grotesk", system-ui, sans-serif';
+  const parts = text.split('//');
+  const draw = (blur, alpha, width) => {
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = blur;
+    ctx.lineWidth = width;
+    // measure to colour the "//" in the accent
+    const full = ctx.measureText(text).width;
+    let x = 1024 - full / 2;
+    ctx.textAlign = 'left';
+    parts.forEach((p, i) => {
+      for (const [s, col] of [[p, color], ...(i < parts.length - 1 ? [['//', accent]] : [])]) {
+        ctx.shadowColor = col;
+        ctx.strokeStyle = col;
+        ctx.fillStyle = col;
+        if (width) ctx.strokeText(s, x, 192); else ctx.fillText(s, x, 192);
+        x += ctx.measureText(s).width;
+      }
+    });
+  };
+  draw(60, 0.6, 18);
+  draw(24, 0.9, 8);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 3;
+  const full = ctx.measureText(text).width;
+  let x = 1024 - full / 2;
+  parts.forEach((p, i) => {
+    ctx.strokeStyle = '#f2fffd';
+    ctx.strokeText(p, x, 192);
+    x += ctx.measureText(p).width;
+    if (i < parts.length - 1) { ctx.strokeStyle = '#ffe3ec'; ctx.strokeText('//', x, 192); x += ctx.measureText('//').width; }
+  });
+  return toTexture(c);
+}

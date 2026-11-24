@@ -89,6 +89,24 @@ export const sfx = {
   chime: () => {
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.9, vol: 0.09, delay: i * 0.09 }));
   },
+  /** A part landing on something; `k` from 0 (soft) to 1 (hard). */
+  thud: (k = 0.5) => {
+    const c = ensure();
+    if (!c) return;
+    const t = c.currentTime;
+    const src = c.createBufferSource();
+    src.buffer = noiseBuffer(c, 0.15);
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 500 + k * 1400;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.05 + k * 0.16, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    src.connect(f).connect(g).connect(master);
+    src.start(t);
+    src.stop(t + 0.15);
+    tone({ freq: 120 + k * 60, to: 60, type: 'sine', dur: 0.12, vol: 0.06 + k * 0.1 });
+  },
   star: (i = 0) => tone({ freq: 880 * Math.pow(1.26, i), type: 'triangle', dur: 0.25, vol: 0.1, delay: i * 0.18 }),
   fanHum(on) {
     const c = ensure();

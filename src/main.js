@@ -64,6 +64,7 @@ const workshop = createWorkshop($('#viewport'), {
     else if (target.kind === 'part') openShowcase(target.category, target.partId);
     else if (target.kind === 'poster') openPoster(target.id);
     else if (target.kind === 'compare') openCompare();
+    else if (target.kind === 'challenges') openStart();
   },
   onWalkLock(locked) {
     $('#app').classList.toggle('walk-locked', locked);
@@ -233,9 +234,28 @@ function render() {
   renderPowerButton();
   renderMode();
   renderMonitor();
+  renderChallengeBoard();
   workshop.showSlot(state.powered ? null : state.selected);
   store.set('rig.session', { mode: state.mode, build: state.build });
   vr?.refresh();
+}
+
+/** The board in the middle of the showroom: every challenge, stars, live goals. */
+function challengeList() {
+  return CHALLENGES.map((c) => ({ id: c.id, title: c.title, tag: c.tag, brief: c.brief, stars: state.stars[c.id] || 0 }));
+}
+
+function renderChallengeBoard() {
+  if (!workshop.showroom?.setChallenges) return;
+  const ch = CHALLENGE_BY_ID[state.mode];
+  const met = ch ? scoreChallenge(ch, analysis).met : null;
+  workshop.showroom.setChallenges({
+    list: challengeList(),
+    active: ch?.id || null,
+    title: ch ? ch.title : 'Free build',
+    brief: ch ? ch.brief : 'No challenge running. Pick one to get a budget and three goals; each goal you meet earns a star.',
+    goals: ch ? ch.goals.map((g, i) => ({ label: g.label, met: met[i] })) : null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -638,7 +658,7 @@ function openHelp(fromStart = false) {
       <div><kbd>R</kbd> reset camera</div><div><kbd>C</kbd> compare parts</div><div><kbd>M</kbd> mute</div>
     </div>
     <h3 class="help-sub">Walking the showroom</h3>
-    <p class="muted small">Press <kbd>F</kbd> or <em>Walk around</em> to leave the bench and explore. Display cases hold every GPU, CPU, memory kit and drive; posters on the walls explain the rules; the kiosk opens the comparison charts.</p>
+    <p class="muted small">Press <kbd>F</kbd> or <em>Walk around</em> to leave the bench and explore. Display cases hold every GPU, CPU, memory kit and drive; posters on the walls explain the rules; the challenge board in the middle of the room shows your stars and starts a challenge.</p>
     <div class="keys">
       <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div><div><kbd>Mouse</kbd> look</div><div><kbd>Shift</kbd> run</div>
       <div><kbd>E</kbd> interact</div><div><kbd>Esc</kbd> free the mouse</div><div><kbd>E</kbd> at the desk: back to bench</div>
@@ -938,6 +958,8 @@ function setupVR() {
     errorSound: () => sfx.error(),
     power: () => (state.powered ? powerOff() : powerOn()),
     getPoster: (id) => workshop.showroom?.posters.get(id),
+    getChallenges: () => ({ list: challengeList(), active: CHALLENGE_BY_ID[state.mode]?.id || null }),
+    startChallenge: (id) => startMode(id, { fresh: true }),
     challengeSummary: (a) => {
       const ch = CHALLENGE_BY_ID[state.mode];
       if (!ch) return null;
@@ -946,6 +968,7 @@ function setupVR() {
     },
     click: () => sfx.click(),
     whoosh: () => sfx.remove(),
+    thud: (k) => sfx.thud(k),
     onEnter: () => {
       document.querySelectorAll('dialog[open]').forEach((d) => d.close());
       if (state.mode === null) { state.mode = 'free'; render(); }

@@ -6,6 +6,9 @@ import { makeBlocker } from './walk.js';
 import { createPanel } from './vrPanel.js';
 import { createVRUI } from '../ui/vrViews.js';
 import { carryZoom, createHeldPart } from './parts.js';
+import { createPhysics } from './physics.js';
+import { CASE } from './pcCase.js';
+import { DESK_TOP } from './room.js';
 import { getPart } from '../data/catalog.js';
 import { REQUIRES } from '../logic/analyze.js';
 
@@ -20,6 +23,8 @@ const SNAP_DIST = 0.14; // how close a held part must be to its slot to install
 // Parts are carried at their shelf/display size (small parts enlarged) and shrink
 // back to real size as they approach their slot.
 const SHRINK_FROM = 0.45; // metres from the slot where shrinking starts
+const PUT_BACK = 0.25; // let go this close to where a shelf part came from and it goes back
+const THROW_BOOST = 1.15; // a little extra so throws feel like they carry
 const TEAL = 0x5eead4, GREEN = 0x4ade80, RED = 0xff4d6d;
 
 /**
@@ -156,6 +161,7 @@ export function createVR(workshop, hooks) {
     else if (target.kind === 'part') ui.open('build', { category: target.category, highlight: target.partId });
     else if (target.kind === 'poster') ui.open('poster', { posterId: target.id });
     else if (target.kind === 'compare') ui.open('compare', { cmpCat: 'gpu', baseline: null });
+    else if (target.kind === 'challenges') ui.open('challenges');
   }
 
   function select(p) {
@@ -168,6 +174,7 @@ export function createVR(workshop, hooks) {
   // --- per-frame -------------------------------------------------------------------
   engine.onUpdate((dt) => {
     if (!active) return;
+    physics?.step(dt);
     let hover = null;
     labelOwner = null;
     for (const p of pointers) {
@@ -260,6 +267,7 @@ export function createVR(workshop, hooks) {
   /** What, if anything, can be picked up from this object (walks up the hierarchy). */
   function findGrab(obj) {
     for (let o = obj; o; o = o.parent) {
+      if (o.userData.loose) return { source: 'loose', partId: o.userData.partId, object: o };
       if (o.userData.grab) return { source: 'table', partId: o.userData.grab.partId, object: o };
       if (o.userData.interact?.kind === 'part') return { source: 'display', partId: o.userData.interact.partId, object: o };
       if (o.parent === pc.group && o.userData.partId && o.userData.partId !== 'stock') return { source: 'case', partId: o.userData.partId, object: o };
@@ -285,7 +293,8 @@ export function createVR(workshop, hooks) {
     const installed = [...workshop.installed.values()]
       .filter((o) => o.userData.partId !== 'stock')
       .map((o) => ({ box: caseLocalBox(o), grab: findGrab(o), local: true }));
-    return [...installed, ...touchables];
+    const loose = (physics?.bodies || []).map((b) => ({ box: new THREE.Box3().setFromObject(b.object), grab: findGrab(b.object) }));
+    return [...installed, ...loose, ...touchables];
   }
 
   /**
@@ -359,6 +368,23 @@ export function createVR(workshop, hooks) {
     const part = getPart(target.partId);
     if (!part) return;
     const start = new THREE.Vector3();
+    if (target.source === 'loose') {
+      // a part lying where it was thrown: pick that very object back up
+      const holder = target.object;
+      physics.remove(holder);
+      holder.userData.loose = false;
+      holder.userData.held = true;
+      holder.traverse((o) => { o.raycast = () => {}; });
+      holder.getWorldPosition(start);
+      p.grip.attach(holder);
+      if (pulled) pullToHand(p, holder);
+      const { zoom, slotCenter } = holder.userData;
+      p.held = { holder, part, slotCenter, source: 'loose', from: start, ready: false, zoom, scale: holder.scale.x, trail: [] };
+      label.visible = false;
+      haptic(p, 0.6, 50);
+      hooks.click?.();
+      return;
+    }
     if (target.source === 'case') {
       if (hooks.isBusy()) return;
       tmpBox.setFromObject(target.object).getCenter(start);
@@ -374,20 +400,71 @@ export function createVR(workshop, hooks) {
     holder.quaternion.copy(caseQuat);
     scene.add(holder);
     p.grip.attach(holder);
-    if (pulled) {
-      // fly into the hand, just in front of the controller
-      const from = holder.position.clone();
-      const to = new THREE.Vector3(0, -0.02, -0.1);
-      engine.tween({ duration: 0.25, onUpdate: (k) => { if (p.held?.holder === holder) holder.position.lerpVectors(from, to, k); } });
-    }
+    if (pulled) pullToHand(p, holder);
     // keep the size it had on the shelf, so picking it up doesn't make it jump
     const zoom = target.object.userData.zoom || carryZoom(holder.userData.size);
     const scale = target.source === 'case' ? 1 : zoom;
     holder.scale.setScalar(scale);
-    p.held = { holder, part, slotCenter, source: target.source, from: start, ready: false, zoom, scale };
+    Object.assign(holder.userData, { zoom, slotCenter });
+    p.held = { holder, part, slotCenter, source: target.source, from: start, ready: false, zoom, scale, trail: [] };
     label.visible = false;
     haptic(p, 0.6, 50);
     hooks.click?.();
+  }
+
+  /** Fly a part into the hand, just in front of the controller. */
+  function pullToHand(p, holder) {
+    const from = holder.position.clone();
+    const to = new THREE.Vector3(0, -0.02, -0.1);
+    engine.tween({ duration: 0.25, onUpdate: (k) => { if (p.held?.holder === holder) holder.position.lerpVectors(from, to, k); } });
+  }
+
+  // --- throwing ----------------------------------------------------------------------
+  let physics = null;
+  function getPhysics() {
+    if (physics) return physics;
+    // furniture as boxes: the desk, the monitor, the case on the desk, and the showroom
+    pc.group.updateMatrixWorld(true);
+    const caseBox = new THREE.Box3(new THREE.Vector3(-CASE.D / 2, 0, -CASE.W / 2), new THREE.Vector3(CASE.D / 2, CASE.H, CASE.W / 2)).applyMatrix4(pc.group.matrixWorld);
+    const desk = workshop.colliders[0];
+    const solids = [
+      new THREE.Box3(new THREE.Vector3(desk.minX, 0, desk.minZ + 0.05), new THREE.Vector3(desk.maxX, DESK_TOP, desk.maxZ - 0.03)),
+      new THREE.Box3().setFromObject(workshop.monitor.group),
+      caseBox,
+      ...(workshop.showroom?.solids || []),
+      ...(workshop.roomSolids || []),
+    ];
+    physics = createPhysics({ solids, room: ROOM, onImpact: (body, speed) => hooks.thud?.(Math.min(1, speed / 4)) });
+    return physics;
+  }
+
+  /** Hand velocity from the last ~80 ms of the held part's motion. */
+  function throwVelocity(held) {
+    const now = held.trail[held.trail.length - 1];
+    const vel = new THREE.Vector3(), spin = new THREE.Vector3();
+    if (!now) return { vel, spin };
+    const old = held.trail.find((s) => now.t - s.t <= 0.08) || now;
+    const dt = now.t - old.t;
+    if (dt < 0.008) return { vel, spin };
+    vel.subVectors(now.pos, old.pos).divideScalar(dt).multiplyScalar(THROW_BOOST);
+    const dq = now.quat.clone().multiply(old.quat.clone().invert());
+    const angle = 2 * Math.acos(Math.min(1, Math.abs(dq.w)));
+    if (angle > 1e-3) {
+      spin.set(dq.x, dq.y, dq.z).normalize().multiplyScalar((dq.w < 0 ? -1 : 1) * angle / dt);
+      spin.clampLength(0, 18);
+    }
+    vel.clampLength(0, 12);
+    return { vel, spin };
+  }
+
+  function letGo(holder, held) {
+    const { vel, spin } = throwVelocity(held);
+    holder.userData.held = false;
+    holder.userData.loose = true;
+    holder.traverse((o) => { delete o.raycast; });
+    // local half extents; the object's own scale (shelf zoom) is applied by its matrix
+    const half = holder.userData.size.clone().multiplyScalar(0.5);
+    getPhysics().add(holder, half, vel, spin);
   }
 
   function canInstall(part) {
@@ -397,13 +474,17 @@ export function createVR(workshop, hooks) {
 
   function updateHeld(p) {
     const { holder, part, slotCenter } = p.held;
+    // remember recent motion, for the throw
+    const t = performance.now() / 1000;
+    p.held.trail.push({ t, pos: holder.getWorldPosition(new THREE.Vector3()), quat: holder.getWorldQuaternion(new THREE.Quaternion()) });
+    while (p.held.trail.length > 2 && t - p.held.trail[0].t > 0.15) p.held.trail.shift();
     const targetWorld = pc.group.localToWorld(slotCenter.clone());
     const d = holder.getWorldPosition(new THREE.Vector3()).distanceTo(targetWorld);
     const ok = canInstall(part);
     const ready = ok && d < SNAP_DIST;
     // real size at the slot, magnified when carried away from it
-    const t = THREE.MathUtils.smoothstep(d, SNAP_DIST, SHRINK_FROM);
-    const want = 1 + (p.held.zoom - 1) * t;
+    const k = THREE.MathUtils.smoothstep(d, SNAP_DIST, SHRINK_FROM);
+    const want = 1 + (p.held.zoom - 1) * k;
     p.held.scale += (want - p.held.scale) * 0.2;
     holder.scale.setScalar(p.held.scale);
     if (ready && !p.held.ready) haptic(p, 0.3, 25);
@@ -443,12 +524,16 @@ export function createVR(workshop, hooks) {
         hooks.errorSound?.();
         haptic(p, 0.9, 120);
       }
-      // put it back: shrink away where it came from
-      const p0 = holder.position.clone();
-      const p1 = held.source === 'case' ? p0.clone() : held.from;
-      const s0 = holder.scale.x;
-      engine.tween({ duration: 0.35, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.scale.setScalar(Math.max(0.01, s0 * (1 - k))); } })
-        .then(() => scene.remove(holder));
+      const fromShelf = held.source === 'table' || held.source === 'display';
+      if (fromShelf && holder.position.distanceTo(held.from) < PUT_BACK && throwVelocity(held).vel.length() < 0.8) {
+        // let go where it came from: it goes back on the shelf
+        const p0 = holder.position.clone(), p1 = held.from, s0 = holder.scale.x;
+        engine.tween({ duration: 0.3, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.scale.setScalar(Math.max(0.01, s0 * (1 - k))); } })
+          .then(() => scene.remove(holder));
+      } else {
+        // anywhere else it is a real object: it flies with the hand, falls and lands
+        letGo(holder, held);
+      }
     }
     finishHeld();
   }
@@ -526,6 +611,7 @@ export function createVR(workshop, hooks) {
 
   renderer.xr.addEventListener('sessionend', () => {
     for (const p of pointers) if (p.held) { scene.remove(p.held.holder); p.held = null; }
+    physics?.clear();
     finishHeld();
     label.visible = false;
     active = false;
@@ -559,6 +645,6 @@ export function createVR(workshop, hooks) {
     refresh: () => ui.refresh(),
     showResult: (a) => { ui.showResult(a); placePanel(); },
     // exposed for automated checks without a headset
-    _test: { ui, panel, interact, teleport, turn, placePanel, setActive(v) { active = v; }, pointers, tryGrab, release, label },
+    _test: { ui, panel, interact, teleport, turn, placePanel, setActive(v) { active = v; }, pointers, tryGrab, release, label, get physics() { return physics; } },
   };
 }

@@ -59,7 +59,7 @@ export function createVRUI(panel, hooks) {
         p.text(k, 70, y + 48, { size: 30, weight: 700, color: C.accent });
         p.text(v, 340, y + 48, { size: 28 });
       });
-      p.para('Grab parts from the parts wall left of the workbench, then fit them into the open case: the slot glows green when you can let go. Pull the trigger on posters or the kiosk to read and compare.', 40, 640, 1120, { size: 25 });
+      p.para('Grab parts from the parts wall left of the workbench, then fit them into the open case: the slot glows green when you can let go. Pull the trigger on posters to read them, or on the challenge board to start a challenge.', 40, 640, 1120, { size: 25 });
       p.button('open:build', 40, 760, 360, 90, 'Open build menu', { variant: 'primary', size: 30 });
       p.button('close', 420, 760, 220, 90, 'Got it', { size: 30 });
     },
@@ -114,6 +114,25 @@ export function createVRUI(panel, hooks) {
       if (cat.id === 'cpu' || cat.id === 'gpu') p.button('open:compare', 700, y + 18, 200, 72, 'Compare', { size: 26 });
       const powered = hooks.isPowered();
       p.button('power', 920, y + 18, 244, 72, powered ? 'Shut down' : 'Power on', { variant: powered ? 'danger' : 'primary', size: 28, disabled: hooks.isBusy() });
+    },
+
+    challenges(p) {
+      const { list, active } = hooks.getChallenges();
+      const total = list.reduce((n, c) => n + c.stars, 0);
+      header(p, `Challenge board · ★ ${total} / ${list.length * 3}`, 'Pick a challenge');
+      list.forEach((c, i) => {
+        const y = 140 + i * 104;
+        const on = c.id === active;
+        p.rect(40, y, 1120, 92, on ? 'rgba(94,234,212,0.12)' : C.raise);
+        p.text(String(i + 1).padStart(2, '0'), 66, y + 56, { size: 28, weight: 700, color: C.accent, font: VR_MONO });
+        p.text(c.title, 130, y + 42, { size: 30, weight: 700, max: 520 });
+        p.text(c.brief, 130, y + 76, { size: 19, color: C.muted, max: 620 });
+        p.text('★'.repeat(c.stars) + '☆'.repeat(3 - c.stars), 790, y + 58, { size: 34, color: c.stars ? C.warn : '#3a404c' });
+        p.button(`challenge:${c.id}`, 960, y + 14, 180, 64, on ? 'Restart' : 'Start', { variant: on ? 'ghost' : 'primary', size: 26 });
+      });
+      p.button('challenge:free', 40, 784, 280, 80, 'Free build', { size: 28 });
+      p.button('open:compare', 340, 784, 300, 80, 'Compare parts', { size: 28 });
+      p.button('close', 660, 784, 200, 80, 'Close', { size: 28 });
     },
 
     compare(p) {
@@ -230,6 +249,7 @@ export function createVRUI(panel, hooks) {
     else if (cmd === 'metric') { ui.metric += Number(arg); panel.refresh(); }
     else if (cmd === 'base') { ui.baseline = arg; panel.refresh(); }
     else if (cmd === 'fix') open('build', { category: arg, highlight: null });
+    else if (cmd === 'challenge') { hooks.startChallenge(arg); open('build', { category: 'motherboard', highlight: null }); }
   }
 
   return {

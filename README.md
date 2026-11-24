@@ -4,7 +4,7 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 
 **[▶ Play it live](https://aaronkp.tech/pc_builder_simulator/)**
 
-![The showroom: display cases along the walls, the compare kiosk on the logo rug, and the glowing workbench at the back](docs/showroom.jpg)
+![The showroom: display cases along the walls, the challenge board on the logo rug, and the glowing workbench at the back](docs/showroom.jpg)
 
 | | |
 | --- | --- |
@@ -19,11 +19,12 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 - **Get caught by real compatibility rules.** Wrong CPU socket, DDR4 sticks in a DDR5 board, a cooler with no bracket for your socket, an under-rated cooler that throttles, a power supply that can't carry the load, or no display output because the CPU has no integrated graphics.
 - **Shop on a budget.** Every part has a price and spec chips. The catalog shows whether each option works with what's already installed, and what a swap would cost.
 - **Power on.** The PC runs a POST check on the monitor on the desk. If something is wrong it beeps, flags the faulty part and explains how to fix it. If it boots, fans spin up, RGB lights come on and you get frame-rate estimates at 1080p, 1440p and 4K, plus a creator score and a rig score.
-- **Take on challenges.** Six briefs, from a $800 1080p gamer to a 4K no-compromise build, each with three stars to earn. Progress is saved in the browser.
+- **Take on challenges.** Six briefs, from a $800 1080p gamer to a 4K no-compromise build, each with three stars to earn. A double-sided challenge board in the middle of the showroom shows your stars and a live checklist for the one you're playing; aim at it to start one. Progress is saved in the browser.
 - **Walk the showroom.** Every session starts at the showroom entrance: explore on foot with WASD and the mouse, then walk to the glowing workbench and press E to start building. You can leave the bench to explore again at any time. Glass display cases hold every graphics card, processor, memory kit and drive with price plaques; aim at one and press E to browse it or add it to your build.
+- **Hang out in the showroom.** Oak floors, a walnut slat wall, a framed pegboard behind the workbench, wall-washing cove lights, a halo light over the challenge board, a neon sign and a lounge corner.
 - **Read the walls.** Seven info posters explain the rules of the game (sockets, DDR4 vs DDR5, power budgets, bottlenecks, cooling, storage speeds and the build order), each readable full-size with E.
 - **Play in VR.** On a WebXR headset (Quest, Vision Pro, PC VR), the whole game works with controllers: thumbstick walking, snap turning, point-and-teleport, laser pointers, and floating panels for the build menu, comparison charts, posters and boot results.
-- **Build with your hands.** In VR, grab parts from the lit parts wall (every component, one labelled row per category in build order) or the display cases, carry them to the case and fit them in. Small parts grow while you carry them and shrink back to real size at the slot, which glows green when you're close enough to let go, red if something has to go in first. Reach into the case to take parts back out.
+- **Build with your hands.** In VR, grab parts from the lit parts wall (every component, one labelled row per category in build order) or the display cases, carry them to the case and fit them in. Small parts grow while you carry them and shrink back to real size at the slot, which glows green when you're close enough to let go, red if something has to go in first. Reach into the case to take parts back out. Let go anywhere else and a part behaves like a real object: throw it and it flies with your hand's speed and spin, bounces, and settles flat on the floor, the desk, the sofa or a shelf, where you can pick it up again.
 - **Compare before you buy.** Side-by-side charts for CPUs (gaming, multi-core, threads, power, price, value) and GPUs (1080p/1440p/4K FPS, VRAM, power, price, value). Pick any part as the baseline and every other bar shows its difference; a table view is one click away.
 - **Share a build.** One click copies a link that rebuilds your exact PC for whoever opens it.
 
@@ -85,12 +86,14 @@ src/
   data/challenges.js     Challenge briefs and star goals
   logic/analyze.js       Compatibility, power and performance rules
   three/engine.js        Renderer, camera, controls and tweening
-  three/room.js          The room shell, workbench, monitor, shelves, lights
-  three/showroom.js      Display cases, info posters, compare kiosk, decor
+  three/room.js          The room shell, workbench, monitor, lounge corner, lights
+  three/showroom.js      Parts wall, display cases, info posters, challenge board, decor
   three/walk.js          First-person controller: pointer lock, collisions, aim-to-interact
-  three/vr.js            WebXR: controllers, laser pointers, locomotion, teleport
+  three/vr.js            WebXR: controllers, hands, grabbing, throwing, locomotion, teleport
+  three/physics.js       Lightweight physics for thrown parts: gravity, bounces, settling
+  three/bake.js          Merges static displays into a few meshes to keep VR fast
   three/vrPanel.js       Canvas-drawn panels with clickable buttons for VR
-  ui/vrViews.js          The VR panels: build menu, compare, posters, results, help
+  ui/vrViews.js          The VR panels: build menu, challenges, compare, posters, results, help
   three/pcCase.js        Procedural case, fans and slot positions
   three/parts.js         Model loading plus procedural parts
   three/workshop.js      Installs/removes parts, picking, power effects

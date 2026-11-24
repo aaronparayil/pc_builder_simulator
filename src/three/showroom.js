@@ -340,60 +340,157 @@ function buildCabinet(category, title, parts) {
 }
 
 // ---------------------------------------------------------------------------
-// Compare kiosk
+// Challenge board
 
-function buildKiosk() {
-  const g = new THREE.Group();
-  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.0, 0.3), frameMat);
-  stand.position.y = 0.5;
-  stand.castShadow = true;
-  g.add(stand);
-  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.455, 0.01, 0.305), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.5), toneMapped: false }));
-  accent.position.y = 0.3;
-  g.add(accent);
-  const gpus = [...PARTS.gpu].sort((a, b) => b.fps1080 - a.fps1080);
-  const tex = canvasTexture(1024, 640, (ctx, w, h) => {
-    ctx.fillStyle = '#0d0f15';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = TEAL;
-    ctx.font = `700 52px ${SANS}`;
-    ctx.fillText('COMPARE PARTS', 48, 86);
-    ctx.fillStyle = '#8b95a7';
-    ctx.font = `500 26px ${MONO}`;
-    ctx.fillText('GPU · 1440p FPS', 48, 128);
-    gpus.forEach((gpu, i) => {
-      const y = 180 + i * 72;
-      const v = Math.round(gpu.fps1080 * 0.68);
-      ctx.fillStyle = '#c3cad6';
-      ctx.font = `500 26px ${SANS}`;
-      ctx.fillText(gpu.name.replace('GeForce ', '').replace('Radeon ', ''), 48, y + 20);
-      const bw = (560 * v) / 200;
-      ctx.fillStyle = i === 0 ? CHART_ACCENT : CHART_MUTED;
-      ctx.beginPath();
-      ctx.roundRect(330, y, bw, 24, [0, 4, 4, 0]);
-      ctx.fill();
-      ctx.fillStyle = '#e6edf3';
-      ctx.font = `600 26px ${SANS}`;
-      ctx.fillText(String(v), 330 + bw + 12, y + 21);
-    });
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `600 28px ${SANS}`;
-    ctx.fillText('Press E to compare CPUs and GPUs', 48, h - 36);
-  });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.4), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
-  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.44, 0.03), frameMat);
-  const head = new THREE.Group();
-  head.add(bezel);
-  screen.position.z = 0.016;
-  head.add(screen);
-  head.position.set(0, 1.22, 0.02);
-  head.rotation.x = -0.35;
-  g.add(head);
-  g.userData.interact = { kind: 'compare', label: 'Compare CPUs and GPUs' };
-  return g;
+function starPath(ctx, cx, cy, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.closePath();
 }
 
-// ---------------------------------------------------------------------------
+function drawStars(ctx, x, y, n, r = 16) {
+  for (let i = 0; i < 3; i++) {
+    starPath(ctx, x + i * (r * 2.4), y, r);
+    ctx.fillStyle = i < n ? '#ffd166' : '#323844';
+    ctx.fill();
+  }
+}
+
+/**
+ * The challenge board: every challenge with the stars you've earned, and a live
+ * checklist for the one you're playing. `data` comes from main.js.
+ */
+function drawChallengeBoard(ctx, w, h, data) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#10131b');
+  g.addColorStop(1, '#0a0c11');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = TEAL;
+  ctx.font = `700 76px ${SANS}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('CHALLENGES', 60, 104);
+  ctx.fillStyle = '#8b95a7';
+  ctx.font = `500 30px ${MONO}`;
+  ctx.fillText('point here and pull the trigger · or press E · to pick one', 62, 150);
+  const total = data.list.reduce((s, c) => s + c.stars, 0);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#e6edf3';
+  ctx.font = `700 54px ${MONO}`;
+  ctx.fillText(`${total} / ${data.list.length * 3}`, w - 60, 100);
+  starPath(ctx, w - 60 - ctx.measureText(`${total} / ${data.list.length * 3}`).width - 40, 82, 22);
+  ctx.fillStyle = '#ffd166';
+  ctx.fill();
+  ctx.textAlign = 'left';
+
+  // the list
+  const listW = 930;
+  data.list.forEach((c, i) => {
+    const y = 190 + i * 124;
+    const active = c.id === data.active;
+    ctx.fillStyle = active ? 'rgba(94,234,212,0.12)' : '#151922';
+    ctx.beginPath(); ctx.roundRect(60, y, listW, 108, 18); ctx.fill();
+    if (active) { ctx.strokeStyle = TEAL; ctx.lineWidth = 4; ctx.stroke(); }
+    ctx.fillStyle = TEAL;
+    ctx.font = `700 40px ${MONO}`;
+    ctx.fillText(String(i + 1).padStart(2, '0'), 92, y + 68);
+    ctx.fillStyle = '#e6edf3';
+    ctx.font = `700 44px ${SANS}`;
+    ctx.fillText(c.title, 180, y + 70);
+    // tag chip
+    const tx = 180 + ctx.measureText(c.title).width + 24;
+    ctx.font = `600 26px ${MONO}`;
+    const tw = ctx.measureText(c.tag).width + 28;
+    ctx.fillStyle = 'rgba(94,234,212,0.14)';
+    ctx.beginPath(); ctx.roundRect(tx, y + 34, tw, 44, 10); ctx.fill();
+    ctx.fillStyle = TEAL;
+    ctx.fillText(c.tag, tx + 14, y + 66);
+    drawStars(ctx, 60 + listW - 150, y + 56, c.stars, 20);
+    if (active) {
+      ctx.fillStyle = TEAL;
+      ctx.font = `600 22px ${MONO}`;
+      ctx.textAlign = 'right';
+      ctx.fillText('PLAYING', 60 + listW - 24, y + 100);
+      ctx.textAlign = 'left';
+    }
+  });
+
+  // now playing
+  const x = 1030, cw = w - x - 60, top = 190;
+  ctx.fillStyle = '#151922';
+  ctx.beginPath(); ctx.roundRect(x, top, cw, 6 * 124 - 16, 18); ctx.fill();
+  ctx.fillStyle = '#8b95a7';
+  ctx.font = `600 26px ${MONO}`;
+  ctx.fillText('NOW PLAYING', x + 32, top + 56);
+  ctx.fillStyle = '#e6edf3';
+  ctx.font = `700 50px ${SANS}`;
+  ctx.fillText(data.title, x + 32, top + 118);
+  ctx.fillStyle = '#aab3c2';
+  ctx.font = `400 30px ${SANS}`;
+  let yy = wrap(ctx, data.brief, x + 32, top + 170, cw - 64, 40);
+  if (data.goals) {
+    yy += 20;
+    data.goals.forEach((goal) => {
+      ctx.beginPath();
+      ctx.arc(x + 52, yy - 10, 18, 0, Math.PI * 2);
+      if (goal.met) {
+        ctx.fillStyle = TEAL; ctx.fill();
+        ctx.strokeStyle = '#0d0f15'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(x + 43, yy - 10); ctx.lineTo(x + 50, yy - 2); ctx.lineTo(x + 62, yy - 18); ctx.stroke();
+      } else {
+        ctx.strokeStyle = '#4b5263'; ctx.lineWidth = 4; ctx.stroke();
+      }
+      ctx.fillStyle = goal.met ? '#e6edf3' : '#8b95a7';
+      ctx.font = `500 28px ${SANS}`;
+      yy = wrap(ctx, goal.label, x + 88, yy, cw - 120, 36) + 18;
+    });
+  }
+}
+
+function buildChallengeBoard() {
+  const g = new THREE.Group();
+  const SW = 1.36, SH = 0.82, Y = 1.42;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1600; canvas.height = 965;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const screenMat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  const led = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.6), toneMapped: false });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  // two slim posts on a plinth, a bezel, and a screen on each side
+  add(new THREE.BoxGeometry(1.0, 0.08, 0.42), frameMat, 0, 0.04, 0);
+  add(new THREE.BoxGeometry(1.0, 0.008, 0.425), led, 0, 0.084, 0);
+  for (const x of [-0.42, 0.42]) add(new THREE.BoxGeometry(0.06, Y - SH / 2, 0.06), frameMat, x, (Y - SH / 2) / 2, 0);
+  add(new THREE.BoxGeometry(SW + 0.06, SH + 0.06, 0.06), frameMat, 0, Y, 0);
+  for (const side of [1, -1]) {
+    const s = add(new THREE.PlaneGeometry(SW, SH), screenMat, 0, Y, side * 0.031);
+    s.castShadow = false;
+    if (side < 0) s.rotation.y = Math.PI;
+    const strip = add(new THREE.BoxGeometry(SW + 0.06, 0.006, 0.006), led, 0, Y - SH / 2 - 0.03, side * 0.032);
+    strip.castShadow = false;
+  }
+  const glow = new THREE.PointLight(0x5eead4, 0.8, 2.2, 2);
+  glow.position.set(0, 0.4, 0);
+  glow.userData.vrOff = true;
+  g.add(glow);
+  g.userData.interact = { kind: 'challenges', label: 'Pick a challenge' };
+
+  let key = '';
+  function setChallenges(data) {
+    const k = JSON.stringify(data);
+    if (k === key) return;
+    key = k;
+    drawChallengeBoard(canvas.getContext('2d'), canvas.width, canvas.height, data);
+    tex.needsUpdate = true;
+  }
+  setChallenges({ list: [], active: null, title: 'Free build', brief: '', goals: null });
+  return { group: g, setChallenges };
+}
 
 // ---------------------------------------------------------------------------
 // Parts wall
@@ -624,7 +721,17 @@ function buildPartsWall(rgb) {
   group.add(frame);
   bakeDisplay(group, rows.flatMap((row) => row.items.map((it) => it.obj)), rgb);
 
-  return { group, size: { W, D, H } };
+  // Collision slabs (local space) so thrown parts can land on the shelves
+  const slab = (x0, y0, z0, x1, y1, z1) => new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1));
+  const slabs = [
+    slab(-W / 2, 0, -D / 2, W / 2, H, -D / 2 + 0.02), // back
+    slab(-W / 2, 0, -D / 2, -W / 2 + SIDE, H, D / 2), // sides
+    slab(W / 2 - SIDE, 0, -D / 2, W / 2, H, D / 2),
+    slab(-W / 2, 0, -D / 2, W / 2, PLINTH, D / 2), // plinth
+    slab(-W / 2, H - CAP - BOARD, -D / 2, W / 2, H, D / 2), // top
+    ...rows.map((row) => slab(-W / 2, row.y - 0.045, -D / 2, W / 2, row.y, D / 2)), // shelves with their lips
+  ];
+  return { group, size: { W, D, H }, slabs };
 }
 
 export function buildShowroom(scene) {
@@ -633,6 +740,7 @@ export function buildShowroom(scene) {
   const colliders = [];
   const rgb = [];
   const posters = new Map();
+  const cabinets = [];
 
   // Cabinets along the side walls, facing into the room
   const layout = [
@@ -647,6 +755,7 @@ export function buildShowroom(scene) {
     cab.group.position.set(x, 0, z);
     cab.group.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
     root.add(cab.group);
+    cabinets.push(cab.group);
     cab.items.forEach((it) => rgb.push(...it.userData.rgb));
     const hw = cab.size.D / 2 + 0.03, hd = cab.size.W / 2;
     colliders.push({ minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd });
@@ -775,12 +884,20 @@ export function buildShowroom(scene) {
   root.add(wall.group);
   colliders.push({ minX: WALL_X - wall.size.W / 2, maxX: WALL_X + wall.size.W / 2, minZ: ROOM.minZ, maxZ: ROOM.minZ + wall.size.D + 0.02 });
 
-  // Comparison kiosk in the middle of the room, facing the bench
-  const kiosk = buildKiosk();
-  kiosk.position.set(0, 0, 5.3);
-  kiosk.rotation.y = Math.PI;
-  root.add(kiosk);
-  colliders.push({ minX: -0.3, maxX: 0.3, minZ: 5.1, maxZ: 5.5 });
+  // Challenge board in the middle of the room, readable from both sides
+  const board = buildChallengeBoard();
+  board.group.position.set(0, 0, 5.3);
+  root.add(board.group);
+  colliders.push({ minX: -0.75, maxX: 0.75, minZ: 5.05, maxZ: 5.55 });
+
+  // World-space boxes that thrown parts bounce off and land on
+  root.updateMatrixWorld(true);
+  const solids = [
+    ...cabinets.map((g) => new THREE.Box3().setFromObject(g)),
+    new THREE.Box3().setFromObject(bench),
+    new THREE.Box3().setFromObject(board.group).expandByVector(new THREE.Vector3(0, 0, 0.02)),
+    ...wall.slabs.map((b) => b.clone().applyMatrix4(wall.group.matrixWorld)),
+  ];
 
   function update(dt, time) {
     rgb.forEach((m, i) => m.color.setHSL((time * 0.15 + i * 0.12) % 1, 0.85, 0.55).multiplyScalar(1.6));
@@ -797,5 +914,5 @@ export function buildShowroom(scene) {
     if (!on) beam.intensity = 0;
   }
 
-  return { root, colliders, posters, update, setBeacon };
+  return { root, colliders, solids, posters, update, setBeacon, setChallenges: board.setChallenges };
 }

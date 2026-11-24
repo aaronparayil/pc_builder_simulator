@@ -7,6 +7,7 @@ import { buildCpu } from './models/cpu.js';
 import { buildGpu } from './models/gpu.js';
 import { box as addBox, gold, rgbMaterial } from './models/common.js';
 import { RAM_LOOKS } from '../data/looks.js';
+import { bakeStatic } from './bake.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -339,6 +340,8 @@ export function createHeldPart(part) {
   obj.position.sub(target);
   holder.add(obj);
   holder.userData = { partId: part.id, category: part.category, rgb: obj.userData.rgb || [], size: box.getSize(new THREE.Vector3()) };
+  // a carried or thrown part never changes shape: merge it into a few meshes
+  bakeStatic(holder, holder.userData.rgb);
   return { holder, target };
 }
 

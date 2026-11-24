@@ -242,6 +242,7 @@ export function createWorkshop(container, { onHover, onSelect, onWalkFocus, onWa
   return {
     engine,
     monitor: room.monitor,
+    roomSolids: room.solids,
     preload,
     get walker() { return walker; },
     get colliders() { return [...room.colliders, ...(showroom?.colliders || [])]; },
