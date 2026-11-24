@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from 'three/examples/jsm/webxr/XRHandModelFactory.js';
 import { ROOM } from './room.js';
 import { makeBlocker } from './walk.js';
 import { createPanel } from './vrPanel.js';
 import { createVRUI } from '../ui/vrViews.js';
-import { createHeldPart } from './parts.js';
+import { carryZoom, createHeldPart } from './parts.js';
 import { getPart } from '../data/catalog.js';
 import { REQUIRES } from '../logic/analyze.js';
 
@@ -14,8 +15,11 @@ const REACH = 8;
 const ENTRANCE = new THREE.Vector3(2.4, 0, 7.4);
 const BENCH_SPOT = new THREE.Vector3(0.1, 0, 1.15);
 const GRAB_REACH = 5; // metres: point at a part and squeeze to pull it to your hand
-const TOUCH = 0.07; // metres from the controller to a part's box to grab it directly
+const TOUCH = 0.09; // metres from the controller to a part's box to grab it directly
 const SNAP_DIST = 0.14; // how close a held part must be to its slot to install
+// Parts are carried at their shelf/display size (small parts enlarged) and shrink
+// back to real size as they approach their slot.
+const SHRINK_FROM = 0.45; // metres from the slot where shrinking starts
 const TEAL = 0x5eead4, GREEN = 0x4ade80, RED = 0xff4d6d;
 
 /**
@@ -37,6 +41,7 @@ export function createVR(workshop, hooks) {
 
   // --- controllers ---------------------------------------------------------------
   const factory = new XRControllerModelFactory();
+  const handFactory = new XRHandModelFactory();
   const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
   const ringGeo = new THREE.RingGeometry(0.16, 0.2, 40).rotateX(-Math.PI / 2);
   const dotGeo = new THREE.SphereGeometry(0.012, 12, 8);
@@ -56,12 +61,23 @@ export function createVR(workshop, hooks) {
     ring.visible = dot.visible = false;
     ring.raycast = dot.raycast = () => {};
     scene.add(ring, dot);
-    const p = { ctrl, grip, line, lineMat, ring, dot, source: null, hit: null, scan: 0, lastScan: null, turnReady: true, held: null, menuDown: false };
+    // Hand tracking (controllers put down): simple joint spheres, pinch to grab
+    const hand = renderer.xr.getHand(i);
+    hand.add(handFactory.createHandModel(hand, 'spheres'));
+    rig.add(hand);
+    const p = { ctrl, grip, line, lineMat, ring, dot, source: null, hit: null, scan: 0, lastScan: null, turnReady: true, held: null, menuDown: false, pinched: false };
+    const isHand = () => Boolean(p.source?.hand);
     ctrl.addEventListener('connected', (e) => { p.source = e.data; line.visible = e.data.targetRayMode !== 'gaze'; });
-    ctrl.addEventListener('disconnected', () => { if (p.held) release(p); p.source = null; });
-    ctrl.addEventListener('selectstart', () => { if (!p.held) select(p); });
+    ctrl.addEventListener('disconnected', () => { if (p.held) release(p); p.source = null; p.pinched = false; });
+    ctrl.addEventListener('selectstart', () => {
+      if (p.held) return;
+      // a pinch is both "grab" and "click" for hands: grab if there's a part, else select
+      if (isHand()) { tryGrab(p); if (p.held) { p.pinched = true; return; } }
+      select(p);
+    });
+    ctrl.addEventListener('selectend', () => { if (p.pinched) { p.pinched = false; if (p.held) release(p); } });
     ctrl.addEventListener('squeezestart', () => tryGrab(p));
-    ctrl.addEventListener('squeezeend', () => { if (p.held) release(p); });
+    ctrl.addEventListener('squeezeend', () => { if (p.held && !p.pinched) release(p); });
     return p;
   });
 
@@ -364,7 +380,11 @@ export function createVR(workshop, hooks) {
       const to = new THREE.Vector3(0, -0.02, -0.1);
       engine.tween({ duration: 0.25, onUpdate: (k) => { if (p.held?.holder === holder) holder.position.lerpVectors(from, to, k); } });
     }
-    p.held = { holder, part, slotCenter, source: target.source, from: start, ready: false };
+    // keep the size it had on the shelf, so picking it up doesn't make it jump
+    const zoom = target.object.userData.zoom || carryZoom(holder.userData.size);
+    const scale = target.source === 'case' ? 1 : zoom;
+    holder.scale.setScalar(scale);
+    p.held = { holder, part, slotCenter, source: target.source, from: start, ready: false, zoom, scale };
     label.visible = false;
     haptic(p, 0.6, 50);
     hooks.click?.();
@@ -381,6 +401,11 @@ export function createVR(workshop, hooks) {
     const d = holder.getWorldPosition(new THREE.Vector3()).distanceTo(targetWorld);
     const ok = canInstall(part);
     const ready = ok && d < SNAP_DIST;
+    // real size at the slot, magnified when carried away from it
+    const t = THREE.MathUtils.smoothstep(d, SNAP_DIST, SHRINK_FROM);
+    const want = 1 + (p.held.zoom - 1) * t;
+    p.held.scale += (want - p.held.scale) * 0.2;
+    holder.scale.setScalar(p.held.scale);
     if (ready && !p.held.ready) haptic(p, 0.3, 25);
     p.held.ready = ready;
     pc.showGhost({ center: slotCenter, size: holder.userData.size.clone().addScalar(0.01) });
@@ -400,11 +425,11 @@ export function createVR(workshop, hooks) {
     scene.attach(holder);
     if (held.ready) {
       // glide into the slot, then hand over to the normal install
-      const p0 = holder.position.clone(), q0 = holder.quaternion.clone();
+      const p0 = holder.position.clone(), q0 = holder.quaternion.clone(), s0 = holder.scale.x;
       const p1 = pc.group.localToWorld(held.slotCenter.clone());
       pc.group.getWorldQuaternion(caseQuat);
       const q1 = caseQuat.clone();
-      engine.tween({ duration: 0.22, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.quaternion.slerpQuaternions(q0, q1, k); } })
+      engine.tween({ duration: 0.22, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.quaternion.slerpQuaternions(q0, q1, k); holder.scale.setScalar(s0 + (1 - s0) * k); } })
         .then(async () => {
           const ok = await hooks.install(part.id, { animate: false });
           scene.remove(holder);
@@ -421,7 +446,8 @@ export function createVR(workshop, hooks) {
       // put it back: shrink away where it came from
       const p0 = holder.position.clone();
       const p1 = held.source === 'case' ? p0.clone() : held.from;
-      engine.tween({ duration: 0.35, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.scale.setScalar(Math.max(0.01, 1 - k)); } })
+      const s0 = holder.scale.x;
+      engine.tween({ duration: 0.35, onUpdate: (k) => { holder.position.lerpVectors(p0, p1, k); holder.scale.setScalar(Math.max(0.01, s0 * (1 - k))); } })
         .then(() => scene.remove(holder));
     }
     finishHeld();
@@ -479,6 +505,7 @@ export function createVR(workshop, hooks) {
   }
 
   // --- session lifecycle --------------------------------------------------------------
+  let vrOffLights = [];
   renderer.xr.addEventListener('sessionstart', () => {
     active = true;
     saved = { pos: camera.position.clone(), quat: camera.quaternion.clone(), target: controls.target.clone(), fov: camera.fov };
@@ -488,6 +515,9 @@ export function createVR(workshop, hooks) {
     controls.enabled = false;
     // keep the headset frame rate up: no real-time shadows in VR
     if (workshop.lights?.key) workshop.lights.key.castShadow = false;
+    // and fewer lights: every light is paid for by every pixel, twice
+    vrOffLights = [];
+    scene.traverse((o) => { if (o.isLight && o.userData.vrOff && o.visible) { o.visible = false; vrOffLights.push(o); } });
     rig.position.copy(ENTRANCE);
     rig.rotation.set(0, Math.atan2(ENTRANCE.x, ENTRANCE.z), 0);
     // the headset pose isn't known until the first frame; open the guide just after
@@ -511,13 +541,15 @@ export function createVR(workshop, hooks) {
     controls.enabled = true;
     engine.state.orbit = true;
     if (workshop.lights?.key) workshop.lights.key.castShadow = true;
+    for (const l of vrOffLights) l.visible = true;
+    vrOffLights = [];
     hooks.onExit?.();
   });
 
   async function enter() {
     if (renderer.xr.isPresenting) { renderer.xr.getSession().end(); return; }
     renderer.xr.setReferenceSpaceType('local-floor');
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
     await renderer.xr.setSession(session);
   }
 

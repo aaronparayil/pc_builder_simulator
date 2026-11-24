@@ -644,7 +644,7 @@ function openHelp(fromStart = false) {
       <div><kbd>E</kbd> interact</div><div><kbd>Esc</kbd> free the mouse</div><div><kbd>E</kbd> at the desk: back to bench</div>
     </div>
     <h3 class="help-sub">In VR</h3>
-    <p class="muted small">On a VR headset, press <em>Enter VR</em>. Left stick walks, right stick snap-turns, the trigger selects or teleports to where you point on the floor, and A/B/X/Y opens the build menu. Squeeze the grip to grab a part (reach for it, or point and squeeze to pull it to your hand), carry it to the open case and let go when its slot glows green. Motherboards, coolers and power supplies are on the parts table next to the workbench.</p>
+    <p class="muted small">On a VR headset, press <em>Enter VR</em>. Left stick walks, right stick snap-turns, the trigger selects or teleports to where you point on the floor, and A/B/X/Y opens the build menu. Squeeze the grip to grab a part (reach for it, or point and squeeze to pull it to your hand), carry it to the open case and let go when its slot glows green. Every part is on the parts wall to the left of the workbench, one row per category in build order.</p>
     <details class="credits"><summary>Credits</summary>
       <p>Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> and Vite. The showroom, the case and every part model (graphics cards, processors, motherboards, coolers, memory, power supplies, drives), plus textures and sounds, are generated in code.</p>
       <p>One 3D model used under CC BY 4.0:</p>

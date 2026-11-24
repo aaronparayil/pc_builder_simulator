@@ -178,18 +178,3 @@ export function posterTexture(i) {
   return toTexture(c);
 }
 
-export function boxTexture(label, accent) {
-  const [c, ctx] = canvas(512, 256);
-  ctx.fillStyle = '#a07a52';
-  ctx.fillRect(0, 0, 512, 256);
-  noise(ctx, 512, 256, 18);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 170, 512, 86);
-  ctx.fillStyle = accent;
-  ctx.fillRect(0, 170, 18, 86);
-  ctx.fillStyle = '#fff';
-  ctx.font = '700 48px "Space Grotesk", sans-serif';
-  ctx.fillText(label, 36, 228);
-  return toTexture(c);
-}

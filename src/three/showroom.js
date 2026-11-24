@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { ROOM } from './room.js';
-import { createDisplayObject, createTableObject } from './parts.js';
-import { PARTS, CATEGORIES } from '../data/catalog.js';
+import { createDisplayObject, createShelfObject } from './parts.js';
+import { bakeDisplay } from './bake.js';
+import { PARTS, CATEGORIES, CATEGORY_BY_ID } from '../data/catalog.js';
 
 const SANS = '"Space Grotesk", system-ui, sans-serif';
 const MONO = '"JetBrains Mono", ui-monospace, monospace';
@@ -302,6 +303,7 @@ function buildCabinet(category, title, parts) {
   }
   const lamp = new THREE.PointLight(0xffffff, 1.6, 1.8, 2);
   lamp.position.set(0, 1.2, 0.15);
+  lamp.userData.vrOff = true;
   g.add(lamp);
 
   // Parts, up to two per level
@@ -333,6 +335,7 @@ function buildCabinet(category, title, parts) {
     g.add(p);
   });
   g.userData.interact = { kind: 'cabinet', category, label: `Browse ${title.toLowerCase()}` };
+  bakeDisplay(g, items, items.flatMap((it) => it.userData.rgb || []));
   return { group: g, items, size: { W, D } };
 }
 
@@ -391,6 +394,238 @@ function buildKiosk() {
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Parts wall
+
+const WALL_X = -2.8;
+/** Top row first: the order you build in. */
+const WALL_ROWS = ['motherboard', 'cpu', 'cooler', 'ram', 'storage', 'gpu', 'psu'];
+const onStand = (part) => part.category === 'cpu' || (part.category === 'storage' && part.form === 'm2');
+
+function glowTexture(stops) {
+  return canvasTexture(8, 256, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, h, 0, 0);
+    for (const [at, color] of stops) g.addColorStop(at, color);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  });
+}
+
+function haloTexture() {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    const g = ctx.createRadialGradient(w / 2, h / 2, w * 0.12, w / 2, h / 2, w / 2);
+    g.addColorStop(0, 'rgba(94,234,212,0.55)');
+    g.addColorStop(0.6, 'rgba(94,234,212,0.16)');
+    g.addColorStop(1, 'rgba(94,234,212,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  });
+}
+
+function drawTag(part) {
+  return (ctx, w, h) => {
+    ctx.fillStyle = '#0d0f15';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = TEAL;
+    ctx.fillRect(0, 0, 6, h);
+    ctx.fillStyle = TEAL;
+    ctx.textAlign = 'right';
+    ctx.font = `700 ${Math.round(h * 0.36)}px ${MONO}`;
+    ctx.fillText(`$${part.price}`, w - 16, h * 0.47);
+    const priceW = ctx.measureText(`$${part.price}`).width + 30;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#e6edf3';
+    ctx.font = `600 ${Math.round(h * 0.4)}px ${SANS}`;
+    let name = part.name;
+    while (ctx.measureText(name).width > w - 30 - priceW && name.length > 4) name = name.slice(0, -2).trimEnd() + '…';
+    ctx.fillText(name, 20, h * 0.47);
+    ctx.fillStyle = '#8b95a7';
+    ctx.font = `500 ${Math.round(h * 0.27)}px ${MONO}`;
+    let spec = (part.specs || []).slice(0, 2).join(' · ');
+    while (ctx.measureText(spec).width > w - 36 && spec.length > 4) spec = spec.slice(0, -2).trimEnd() + '…';
+    ctx.fillText(spec, 20, h * 0.86);
+  };
+}
+
+function drawHeader(index, category, count) {
+  return (ctx, w, h) => {
+    ctx.fillStyle = 'rgba(13,15,21,0.9)';
+    ctx.beginPath(); ctx.roundRect(0, 0, w, h, 22); ctx.fill();
+    ctx.strokeStyle = 'rgba(94,234,212,0.5)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(2, 2, w - 4, h - 4, 20); ctx.stroke();
+    ctx.fillStyle = TEAL;
+    ctx.font = `700 110px ${MONO}`;
+    ctx.fillText(String(index + 1).padStart(2, '0'), 30, 128);
+    ctx.fillStyle = '#e6edf3';
+    const label = CATEGORY_BY_ID[category].label.toUpperCase();
+    let size = 58;
+    ctx.font = `700 ${size}px ${SANS}`;
+    while (ctx.measureText(label).width > w - 60 && size > 30) ctx.font = `700 ${--size}px ${SANS}`;
+    ctx.fillText(label, 30, 210);
+    ctx.fillStyle = '#8b95a7';
+    ctx.font = `500 34px ${MONO}`;
+    ctx.fillText(`${count} options`, 30, 262);
+  };
+}
+
+/**
+ * Many small labels drawn into one canvas, so they share a texture and a material
+ * (and end up as a single draw call once baked).
+ */
+function createAtlas(W, H) {
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, transparent: true });
+  const GAP = 4;
+  /** A horizontal band of the canvas (y0..y1 px) that packs labels left to right. */
+  const band = (y0, y1) => {
+    let x = 0, y = y0, rowH = 0;
+    /** Draw a w×h px label into the next free cell; returns a pw×ph m plane mapped to it. */
+    return (w, h, pw, ph, draw) => {
+      if (x + w > W) { x = 0; y += rowH + GAP; rowH = 0; }
+      if (y + h > y1) throw new Error('label atlas band is full');
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+      draw(ctx, w, h);
+      ctx.restore();
+      const geo = new THREE.PlaneGeometry(pw, ph);
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (x + uv.getX(i) * w) / W, 1 - (y + (1 - uv.getY(i)) * h) / H);
+      x += w + GAP;
+      rowH = Math.max(rowH, h);
+      return geo;
+    };
+  };
+  return { material, band };
+}
+
+/**
+ * A tall wall unit with one row per category, backlit by LED strips. Built from the
+ * bottom up so each row is only as tall as its biggest part (plus room for a hand).
+ */
+function buildPartsWall(rgb) {
+  const group = new THREE.Group();
+  const frame = new THREE.Group(); // everything that isn't a part: baked into a few meshes
+  const labels = createAtlas(4096, 1024);
+  const tagPlane = labels.band(0, 700), headerPlane = labels.band(704, 1024);
+  const HEAD = 0.36, AREA = 2.16, SIDE = 0.03, D = 0.44, BOARD = 0.022, PLINTH = 0.09, STAND = 0.026, CAP = 0.14;
+  const W = SIDE * 2 + HEAD + AREA;
+  const areaMin = -W / 2 + SIDE + HEAD;
+
+  const rows = WALL_ROWS.map((category) => {
+    const items = PARTS[category].map((part) => {
+      const obj = createShelfObject(part);
+      const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+      return { part, obj, lift: onStand(part) ? STAND : 0, size };
+    });
+    const h = Math.max(0.17, Math.max(...items.map((it) => it.size.y + it.lift)) + 0.09);
+    return { category, items, h, y: 0 };
+  });
+  let y = PLINTH;
+  for (const row of [...rows].reverse()) {
+    y += BOARD;
+    row.y = y; // top of this row's shelf board
+    y += row.h;
+  }
+  const H = y + BOARD + CAP;
+
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0c0e13, metalness: 0.5, roughness: 0.5 });
+  const shelfMat = new THREE.MeshStandardMaterial({ color: 0x1b1f27, metalness: 0.6, roughness: 0.35 });
+  const standMat = new THREE.MeshPhysicalMaterial({ color: 0xcfe9ff, roughness: 0.1, transparent: true, opacity: 0.35, depthWrite: false });
+  const led = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.8), toneMapped: false });
+  const add = (geo, mat, x, yy, z) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, yy, z);
+    frame.add(m);
+    return m;
+  };
+
+  // Carcass: back, sides, the divider for the row headers, plinth and top
+  add(new THREE.BoxGeometry(W, H, 0.02), dark, 0, H / 2, -D / 2 + 0.01);
+  for (const x of [-W / 2 + SIDE / 2, W / 2 - SIDE / 2]) add(new THREE.BoxGeometry(SIDE, H, D), shelfMat, x, H / 2, 0);
+  add(new THREE.BoxGeometry(0.006, H - PLINTH - CAP, 0.006), led, areaMin - 0.003, PLINTH + (H - PLINTH - CAP) / 2, D / 2 - 0.004);
+  add(new THREE.BoxGeometry(W, PLINTH, D), dark, 0, PLINTH / 2, 0);
+  add(new THREE.BoxGeometry(W, BOARD, D), shelfMat, 0, H - CAP - BOARD / 2, 0);
+  add(new THREE.BoxGeometry(W, CAP, D), dark, 0, H - CAP / 2, 0);
+  // Vertical LED edges on the front of the sides
+  for (const x of [-W / 2 + SIDE / 2, W / 2 - SIDE / 2]) add(new THREE.BoxGeometry(0.006, H - 0.04, 0.006), led, x, H / 2, D / 2 + 0.001);
+
+  // Sign on the top cap
+  const sign = add(new THREE.PlaneGeometry(W - 0.1, CAP - 0.03), new THREE.MeshBasicMaterial({
+    toneMapped: false,
+    map: canvasTexture(1800, 80, (ctx, w, h) => {
+      ctx.fillStyle = '#0c0e13'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = TEAL; ctx.font = `700 56px ${SANS}`; ctx.fillText('PARTS WALL', 16, 60);
+      ctx.fillStyle = '#8b95a7'; ctx.font = `500 32px ${MONO}`; ctx.textAlign = 'right';
+      ctx.fillText('grab a part · carry it to the case · let go when the slot glows', w - 16, 56);
+    }),
+  }), 0, H - CAP / 2, D / 2 + 0.002);
+  sign.raycast = () => {};
+
+  // Backlight per row: a strip along the back of each shelf washing up the back panel
+  const wash = glowTexture([[0, 'rgba(94,234,212,0.75)'], [0.35, 'rgba(94,234,212,0.18)'], [1, 'rgba(94,234,212,0)']]);
+  const washMat = new THREE.MeshBasicMaterial({ map: wash, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const downMat = new THREE.MeshBasicMaterial({ color: 0xfff4e0, toneMapped: false });
+
+  rows.forEach((row, index) => {
+    const { y: top, h, items, category } = row;
+    // shelf board with a front lip that carries the price tags
+    add(new THREE.BoxGeometry(W - SIDE * 2, BOARD, D - 0.02), shelfMat, 0, top - BOARD / 2, 0);
+    add(new THREE.BoxGeometry(W - SIDE * 2, 0.05, 0.014), dark, 0, top - 0.02, D / 2 - 0.007);
+    add(new THREE.BoxGeometry(AREA + HEAD, 0.004, 0.004), led, 0, top + 0.003, -D / 2 + 0.024);
+    const glow = add(new THREE.PlaneGeometry(AREA + HEAD, h), washMat, 0, top + h / 2, -D / 2 + 0.021);
+    glow.raycast = () => {};
+    // warm downlight strip under the shelf above, near the front
+    add(new THREE.BoxGeometry(AREA - 0.04, 0.003, 0.012), downMat, areaMin + AREA / 2, top + h - 0.002, D / 2 - 0.05);
+
+    // row header
+    const hh = Math.min(h - 0.03, (HEAD - 0.04) * 0.75);
+    const header = add(headerPlane(400, 300, hh / 0.75, hh, drawHeader(index, category, items.length)), labels.material,
+      -W / 2 + SIDE + HEAD / 2, top + h / 2, D / 2 - 0.03);
+    header.raycast = () => {};
+
+    const cell = AREA / items.length;
+    items.forEach(({ part, obj, lift }, i) => {
+      const x = areaMin + cell * (i + 0.5);
+      const z = 0.03;
+      if (lift) {
+        // little acrylic easel
+        add(new THREE.BoxGeometry(0.075, lift, 0.07), standMat, x, top + lift / 2, z);
+        const back = add(new THREE.BoxGeometry(0.06, 0.06, 0.004), standMat, x, top + lift + 0.026, z - 0.022);
+        back.rotation.x = -0.45;
+      }
+      obj.position.set(x, top + lift, z);
+      obj.userData.grab = { partId: part.id, category: part.category };
+      obj.userData.interact = { kind: 'part', partId: part.id, category: part.category, label: `Inspect ${part.name}` };
+      group.add(obj);
+      rgb.push(...(obj.userData.rgb || []));
+      const tw = Math.min(cell - 0.03, 0.38);
+      const tag = add(tagPlane(Math.round(tw * 2000), 84, tw, 0.042, drawTag(part)), labels.material, x, top - 0.02, D / 2 + 0.0005);
+      tag.raycast = () => {};
+    });
+  });
+
+  // Soft halo on the wall around the unit, and one fill light in front of it
+  const halo = add(new THREE.PlaneGeometry(W + 1.4, H + 0.9), new THREE.MeshBasicMaterial({ map: haloTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    0, H / 2, -D / 2 - 0.004);
+  halo.raycast = () => {};
+  for (const [x, yy] of [[-0.55, 0.72], [0.65, 0.35]]) {
+    const fill = new THREE.PointLight(0xe3fbf6, 3.2, 3.2, 2);
+    fill.position.set(x, H * yy, D / 2 + 0.75);
+    fill.userData.vrOff = true; // the LED wash carries the look in VR
+    group.add(fill);
+  }
+  group.add(frame);
+  bakeDisplay(group, rows.flatMap((row) => row.items.map((it) => it.obj)), rgb);
+
+  return { group, size: { W, D, H } };
+}
 
 export function buildShowroom(scene) {
   const root = new THREE.Group();
@@ -533,46 +768,12 @@ export function buildShowroom(scene) {
   beam.position.set(0, 1.4, 0.9);
   root.add(beam);
 
-  // Parts table to the right of the workbench: every motherboard, cooler and PSU at
-  // real size, ready to be picked up (the display cases cover the other parts).
-  const table = new THREE.Group();
-  const T = { x: 2.05, z: -0.6, w: 2.0, d: 0.66, h: 0.78 };
-  const top = new THREE.Mesh(new THREE.BoxGeometry(T.w, 0.04, T.d), new THREE.MeshStandardMaterial({ color: 0x23262d, metalness: 0.4, roughness: 0.6 }));
-  top.position.y = T.h - 0.02;
-  top.castShadow = top.receiveShadow = true;
-  table.add(top);
-  const edge = new THREE.Mesh(new THREE.BoxGeometry(T.w, 0.006, 0.006), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5eead4).multiplyScalar(1.4), toneMapped: false }));
-  edge.position.set(0, T.h - 0.03, T.d / 2);
-  table.add(edge);
-  for (const x of [-T.w / 2 + 0.05, T.w / 2 - 0.05]) for (const z of [-T.d / 2 + 0.05, T.d / 2 - 0.05]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, T.h - 0.04, 0.04), frameMat);
-    leg.position.set(x, (T.h - 0.04) / 2, z);
-    table.add(leg);
-  }
-  const tableSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.12), new THREE.MeshBasicMaterial({
-    toneMapped: false,
-    map: canvasTexture(900, 120, (ctx, w, h) => {
-      ctx.fillStyle = '#0d0f15'; ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = TEAL; ctx.font = `700 54px ${SANS}`; ctx.fillText('PARTS TABLE', 24, 76);
-      ctx.fillStyle = '#8b95a7'; ctx.font = `500 30px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText('grab · carry · install', w - 24, 74);
-    }),
-  }));
-  tableSign.position.set(0, T.h - 0.05, T.d / 2 + 0.004);
-  table.add(tableSign);
-  const place = (part, x, z) => {
-    const obj = createTableObject(part);
-    obj.position.set(x, T.h, z);
-    obj.userData.grab = { partId: part.id, category: part.category };
-    obj.userData.interact = { kind: 'part', partId: part.id, category: part.category, label: `Inspect ${part.name}` };
-    table.add(obj);
-    rgb.push(...(obj.userData.rgb || []));
-  };
-  PARTS.motherboard.forEach((part, i) => place(part, -T.w / 2 + 0.22 + i * 0.335, 0.14));
-  PARTS.cooler.forEach((part, i) => place(part, -T.w / 2 + 0.16 + i * 0.22, -0.17));
-  PARTS.psu.forEach((part, i) => place(part, 0.1 + i * 0.235, -0.17));
-  table.position.set(T.x, 0, T.z);
-  root.add(table);
-  colliders.push({ minX: T.x - T.w / 2, maxX: T.x + T.w / 2, minZ: T.z - T.d / 2, maxZ: T.z + T.d / 2 });
+  // Parts wall left of the workbench: every component at real size, one row per
+  // category in build order, ready to be picked up
+  const wall = buildPartsWall(rgb);
+  wall.group.position.set(WALL_X, 0, ROOM.minZ + wall.size.D / 2 + 0.01);
+  root.add(wall.group);
+  colliders.push({ minX: WALL_X - wall.size.W / 2, maxX: WALL_X + wall.size.W / 2, minZ: ROOM.minZ, maxZ: ROOM.minZ + wall.size.D + 0.02 });
 
   // Comparison kiosk in the middle of the room, facing the bench
   const kiosk = buildKiosk();

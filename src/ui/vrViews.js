@@ -59,7 +59,7 @@ export function createVRUI(panel, hooks) {
         p.text(k, 70, y + 48, { size: 30, weight: 700, color: C.accent });
         p.text(v, 340, y + 48, { size: 28 });
       });
-      p.para('Grab parts from the display cases and the parts table next to the workbench, then fit them into the open case: the slot glows green when you can let go. Pull the trigger on posters or the kiosk to read and compare.', 40, 640, 1120, { size: 25 });
+      p.para('Grab parts from the parts wall left of the workbench, then fit them into the open case: the slot glows green when you can let go. Pull the trigger on posters or the kiosk to read and compare.', 40, 640, 1120, { size: 25 });
       p.button('open:build', 40, 760, 360, 90, 'Open build menu', { variant: 'primary', size: 30 });
       p.button('close', 420, 760, 220, 90, 'Got it', { size: 30 });
     },

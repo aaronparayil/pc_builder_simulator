@@ -342,20 +342,54 @@ export function createHeldPart(part) {
   return { holder, target };
 }
 
-/** A real-size part laid out on the parts table: resting on y = 0, centred on x/z. */
-export function createTableObject(part) {
-  const obj = createPartObject(part);
-  obj.position.set(0, 0, 0);
-  // boards lie flat, coolers stand on their base; PSUs already sit flat
-  if (part.category === 'motherboard') obj.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
-  if (part.category === 'cooler') obj.rotation.x = -Math.PI / 2;
+// Small parts are shown and carried bigger than life (a CPU is only 4 cm across),
+// and shrink back to real size as they reach their slot.
+const HOLD_SIZE = 0.2; // metres: show/carry small parts at least this big
+const MAX_ZOOM = 3.5;
+export const carryZoom = (size) => THREE.MathUtils.clamp(HOLD_SIZE / Math.max(size.x, size.y, size.z), 1, MAX_ZOOM);
+
+/**
+ * A part posed on the parts wall (small parts enlarged by carryZoom): front facing +Z (the room), resting on
+ * y = 0, centred on x/z. Boards lean against the back, CPUs and M.2 drives lean back
+ * on a stand, cards and drives stand on edge, coolers on their base, PSUs flat.
+ */
+export function createShelfObject(part) {
+  const c = part.category;
+  let obj;
+  if (c === 'ram') {
+    obj = buildRam(part);
+    obj.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
+  } else if (c === 'gpu') {
+    obj = prepare(buildGpu(part));
+    obj.rotation.x = -Math.PI / 2;
+  } else if (c === 'storage' && part.form !== 'm2') {
+    obj = buildBayDrive(part.form);
+    obj.rotation.x = Math.PI / 2;
+  } else if (c === 'storage') {
+    const tpl = templates.get('storage');
+    obj = part.id === 'nvme4-2t' ? withHeatsink(tpl) : tpl ? tpl.clone(true) : placeholder('storage');
+    obj.rotation.x = -0.45;
+  } else if (c === 'cpu') {
+    obj = buildCpu(part);
+    obj.rotation.x = -0.45;
+  } else {
+    obj = createPartObject(part);
+    obj.position.set(0, 0, 0);
+    if (c === 'motherboard') obj.rotation.x = -0.08;
+    // stand on the base with the fan towards the room
+    if (c === 'cooler') obj.rotation.set(-Math.PI / 2, part.style === 'aio' ? 0 : -Math.PI / 2, 0, 'YXZ');
+  }
   const holder = new THREE.Group();
   holder.add(obj);
   holder.updateMatrixWorld(true);
+  const zoom = carryZoom(new THREE.Box3().setFromObject(holder).getSize(new THREE.Vector3()));
+  obj.scale.multiplyScalar(zoom);
+  holder.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(holder);
-  const c = box.getCenter(new THREE.Vector3());
-  obj.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
+  const mid = box.getCenter(new THREE.Vector3());
+  obj.position.sub(new THREE.Vector3(mid.x, box.min.y, mid.z));
   holder.userData.rgb = obj.userData.rgb || [];
+  holder.userData.zoom = zoom;
   return holder;
 }
 
@@ -400,6 +434,7 @@ export function createDisplayObject(part) {
   const c = box.getCenter(new THREE.Vector3());
   object.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
   holder.userData.rgb = object.userData.rgb || [];
+  holder.userData.zoom = scale;
   return holder;
 }
 

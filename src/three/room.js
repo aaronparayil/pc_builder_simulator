@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { floorTexture, pegboardTexture, woodTexture, deskMatTexture, posterTexture, boxTexture } from './textures.js';
+import { floorTexture, pegboardTexture, woodTexture, deskMatTexture, posterTexture } from './textures.js';
 
 export const DESK_TOP = 0.75;
 
@@ -96,7 +96,7 @@ export function buildRoom(scene) {
   root.add(neon);
 
   // Art posters on the back wall
-  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2], [-3.4, 1.65, 1], [3.3, 1.7, 0]].forEach(([x, y, i]) => {
+  [[-1.05, 1.7, 0], [0.95, 1.75, 1], [1.75, 1.55, 2], [-4.65, 1.65, 1], [3.3, 1.7, 0]].forEach(([x, y, i]) => {
     const p = mesh(new THREE.PlaneGeometry(0.48, 0.64), new THREE.MeshStandardMaterial({ map: posterTexture(i), roughness: 0.6 }), { cast: false });
     p.position.set(x, y, minZ + 0.01);
     root.add(p);
@@ -153,9 +153,6 @@ export function buildRoom(scene) {
   root.add(mug);
   root.add(buildPlant(0.78, DESK_TOP, -0.28));
 
-  // Parts shelf (decorative boxes)
-  root.add(buildShelf(-1.5, -0.62));
-
   // Lighting
   scene.add(new THREE.HemisphereLight(0x9fb3d9, 0x120c0c, 0.6));
   const key = new THREE.SpotLight(0xfff1e0, 32, 6, 0.55, 0.65, 1.6);
@@ -186,7 +183,6 @@ export function buildRoom(scene) {
   // Things the walker bumps into, as world-space XZ boxes
   const colliders = [
     { minX: -0.95, maxX: 0.95, minZ: -0.95, maxZ: 0.46 }, // desk
-    { minX: -2.1, maxX: -0.9, minZ: -0.95, maxZ: -0.2 }, // parts shelf
   ];
 
   return { monitor, lights: { key, fill, rimA, rimB }, colliders };
@@ -207,43 +203,6 @@ function buildPlant(x, y, z) {
     g.add(leaf);
   }
   g.position.set(x, y, z);
-  return g;
-}
-
-function buildShelf(x, z) {
-  const g = new THREE.Group();
-  const w = 0.9, d = 0.4;
-  [-w / 2, w / 2].forEach((ox) => [-d / 2, d / 2].forEach((oz) => {
-    const post = mesh(new THREE.BoxGeometry(0.025, 1.6, 0.025), metal);
-    post.position.set(ox, 0.8, oz);
-    g.add(post);
-  }));
-  const boards = [0.25, 0.75, 1.25];
-  boards.forEach((y) => {
-    const b = mesh(new THREE.BoxGeometry(w + 0.02, 0.02, d), metal);
-    b.position.y = y;
-    g.add(b);
-  });
-  const boxes = [
-    ['GPU', '#5eead4', 0.38, 0.12, 0.26, 0.25],
-    ['PSU', '#ffd166', 0.2, 0.12, 0.22, 0.25],
-    ['CPU', '#ff3d7f', 0.12, 0.12, 0.12, 0.75],
-    ['RAM', '#a78bfa', 0.2, 0.06, 0.12, 0.75],
-    ['SSD', '#60a5fa', 0.14, 0.05, 0.1, 0.75],
-    ['FANS', '#5eead4', 0.3, 0.14, 0.3, 1.25],
-  ];
-  let cursor = { 0.25: -w / 2 + 0.05, 0.75: -w / 2 + 0.05, 1.25: -w / 2 + 0.05 };
-  for (const [label, color, bw, bh, bd, y] of boxes) {
-    const side = new THREE.MeshStandardMaterial({ map: boxTexture(label, color), roughness: 0.9 });
-    const plain = new THREE.MeshStandardMaterial({ color: 0x9c774f, roughness: 0.9 });
-    const box = mesh(new THREE.BoxGeometry(bw, bh, bd), [plain, plain, plain, plain, side, plain]);
-    box.position.set(cursor[y] + bw / 2, y + 0.01 + bh / 2, 0.02);
-    box.rotation.y = (Math.random() - 0.5) * 0.1;
-    cursor[y] += bw + 0.04;
-    g.add(box);
-  }
-  g.position.set(x, 0, z);
-  g.rotation.y = 0.35;
   return g;
 }
 
