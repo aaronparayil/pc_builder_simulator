@@ -4,7 +4,7 @@ Walk into a 3D PC showroom, browse the parts on display, then head to the workbe
 
 **[▶ Play it live](https://aaronkp.tech/pc_builder_simulator/)**
 
-![The showroom: display cases along the walls, the challenge board on the logo rug, and the glowing workbench at the back](docs/showroom.jpg)
+![The showroom: the lit parts wall and the workbench at the back, with the challenge board on the logo rug and display cases to the right](docs/showroom.jpg)
 
 | | |
 | --- | --- |
@@ -55,7 +55,7 @@ npm run dev
 Then open the URL Vite prints. Other scripts:
 
 ```bash
-npm test          # rules-engine unit tests
+npm test          # rules-engine and physics unit tests
 npm run build     # production build in dist/
 npm run preview   # serve the production build
 ```

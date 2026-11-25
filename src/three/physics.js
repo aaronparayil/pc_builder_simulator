@@ -1,23 +1,22 @@
 import * as THREE from 'three';
 
 // Just enough rigid-body physics for parts you throw in VR: gravity, bounces off the
-// floor, walls and furniture (axis-aligned boxes), friction, and settling flat.
+// floor, walls and furniture (axis-aligned boxes), friction, and toppling to lie flat.
 // Bodies don't collide with each other.
 
 const GRAVITY = 9.81;
 const RESTITUTION = 0.32;
 const FRICTION = 0.55; // share of sliding speed lost per contact step
 const MAX_BODIES = 14;
+const FLAT = 1.25; // a part can rest at up to this many times its thinnest height
+const TOPPLE = 45; // rad/s² a part tips over with
+const TIP_MEMORY = 0.25; // seconds a part keeps tipping after losing contact
 
 const corners = [...Array(8)].map(() => new THREE.Vector3());
 const tmpQ = new THREE.Quaternion();
 const tmpV = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
-const AXES = [
-  new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-  new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
-  new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
-];
+const AXES = ['x', 'y', 'z'].flatMap((name) => [1, -1].map((sign) => ({ name, dir: new THREE.Vector3(name === 'x' ? sign : 0, name === 'y' ? sign : 0, name === 'z' ? sign : 0) })));
 
 /**
  * `solids`: world-space THREE.Box3 list; `room`: { minX, maxX, minZ, maxZ, H }.
@@ -28,7 +27,10 @@ export function createPhysics({ solids, room, onImpact }) {
 
   /** Start simulating `object` (origin at its centre) with local half extents `half`. */
   function add(object, half, velocity, spin) {
-    const body = { object, half: half.clone(), vel: velocity.clone(), spin: spin.clone(), still: 0, asleep: false, lastHit: 0 };
+    // the faces it can lie on: thin parts only their broad sides, chunky ones most sides
+    const thin = Math.min(half.x, half.y, half.z);
+    const rests = AXES.filter((a) => half[a.name] <= thin * FLAT).map((a) => a.dir);
+    const body = { object, half: half.clone(), rests, vel: velocity.clone(), spin: spin.clone(), still: 0, asleep: false, lastHit: 0, tip: 0, tipUntil: 0 };
     bodies.push(body);
     while (bodies.length > MAX_BODIES) {
       const old = bodies.shift();
@@ -75,18 +77,21 @@ export function createPhysics({ solids, room, onImpact }) {
     return n.y > 0.7;
   }
 
+  /** Tip towards the nearest stable face, slowly at first like something falling over. */
   function settle(body, dt) {
-    // turn towards the nearest face-down pose, so things come to rest lying flat
     const q = body.object.quaternion;
     let best = null, bestDot = -2;
-    for (const a of AXES) {
+    for (const a of body.rests) {
       const d = tmpV.copy(a).applyQuaternion(q).y;
       if (d > bestDot) { bestDot = d; best = a; }
     }
+    const angle = Math.acos(Math.min(1, bestDot));
+    if (angle < 1e-4) { body.tip = 0; return true; }
+    body.tip = Math.min(body.tip + TOPPLE * dt, 14 * angle + 0.3);
     tmpV.copy(best).applyQuaternion(q);
     tmpQ.setFromUnitVectors(tmpV, UP).multiply(q);
-    q.slerp(tmpQ, Math.min(1, dt * 10));
-    return bestDot;
+    q.rotateTowards(tmpQ, body.tip * dt);
+    return angle - body.tip * dt < 0.02;
   }
 
   function stepBody(body, dt, time) {
@@ -124,8 +129,11 @@ export function createPhysics({ solids, room, onImpact }) {
     let flat = false;
     if (grounded) {
       body.spin.multiplyScalar(Math.max(0, 1 - dt * 6));
-      if (body.vel.length() < 1.2) flat = settle(body, dt) > 0.999;
+      if (body.vel.length() < 1.2) body.tipUntil = time + TIP_MEMORY;
     }
+    // keep tipping through the short drops while it falls over
+    if (time < body.tipUntil) flat = settle(body, dt);
+    else body.tip = 0;
     const slow = body.vel.lengthSq() < 0.0025 && body.spin.lengthSq() < 0.05;
     body.still = grounded && slow && flat ? body.still + dt : 0;
     if (body.still > 0.4) { body.asleep = true; body.vel.set(0, 0, 0); body.spin.set(0, 0, 0); }
